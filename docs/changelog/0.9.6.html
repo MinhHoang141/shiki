@@ -1,0 +1,173 @@
+<!--
+  Per-version release page template. `scripts/generate_release_pages.py`
+  fills in every {{PLACEHOLDER}} with plain string substitution and writes
+  the result to docs/changelog/0.9.6.html. Paths inside are written
+  relative to that output location (one level under docs/), i.e. `../css/`,
+  `../assets/`, `../index.html` etc. — not relative to this template file.
+
+  Unlike changelog.html (which fetches CHANGELOG.md live via JS so it can
+  never drift, see docs/js/main.js), this page's changelog body is baked in
+  statically at generation time — it has to be, since link-unfurlers (the
+  actual point of this page existing) read the raw HTML and never execute
+  JS, so the og:title/og:description/og:image and the visible content must
+  already be correct in the file as committed.
+-->
+<!DOCTYPE html>
+<html lang="en" data-theme="gruvbox-dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>shiki v0.9.6 — Release notes</title>
+  <meta name="description" content="The default (terminal-inherit) theme&#x27;s selected-row highlight now adapts to the terminal&#x27;s own color scheme instead of a fixed ANSI darkgray that could be in…" />
+  <meta name="keywords" content="shiki changelog, shiki v0.9.6, shiki release notes" />
+  <meta name="author" content="sazardev" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://sazardev.github.io/shiki/changelog/0.9.6.html" />
+
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://sazardev.github.io/shiki/changelog/0.9.6.html" />
+  <meta property="og:site_name" content="shiki" />
+  <meta property="og:title" content="shiki v0.9.6 — Release notes" />
+  <meta property="og:description" content="The default (terminal-inherit) theme&#x27;s selected-row highlight now adapts to the terminal&#x27;s own color scheme instead of a fixed ANSI darkgray that could be in…" />
+  <meta property="og:image" content="https://sazardev.github.io/shiki/assets/og/0.9.6.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="shiki v0.9.6 — release card" />
+  <meta property="og:locale" content="en_US" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="shiki v0.9.6 — Release notes" />
+  <meta name="twitter:description" content="The default (terminal-inherit) theme&#x27;s selected-row highlight now adapts to the terminal&#x27;s own color scheme instead of a fixed ANSI darkgray that could be in…" />
+  <meta name="twitter:image" content="https://sazardev.github.io/shiki/assets/og/0.9.6.png" />
+  <meta name="twitter:image:alt" content="shiki v0.9.6 — release card" />
+
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="../assets/apple-touch-icon.png" />
+  <link rel="alternate" type="application/rss+xml" title="shiki changelog" href="../feed.xml" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="../css/styles.css" />
+  <link rel="stylesheet" href="../css/documentation.css" />
+
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "Article", "headline": "shiki v0.9.6 — Release notes", "description": "The default (terminal-inherit) theme's selected-row highlight now adapts to the terminal's own color scheme instead of a fixed ANSI darkgray that could be in…", "image": "https://sazardev.github.io/shiki/assets/og/0.9.6.png", "url": "https://sazardev.github.io/shiki/changelog/0.9.6.html", "mainEntityOfPage": {"@type": "WebPage", "@id": "https://sazardev.github.io/shiki/changelog/0.9.6.html"}, "author": {"@type": "Person", "name": "sazardev", "url": "https://github.com/sazardev"}, "publisher": {"@type": "Organization", "name": "shiki", "logo": {"@type": "ImageObject", "url": "https://sazardev.github.io/shiki/assets/favicon-512.png"}}, "datePublished": "2026-09-20", "dateModified": "2026-09-20"}</script>
+</head>
+<body class="doc-page">
+
+  <header class="topbar">
+    <div class="brand"><a href="../index.html" style="color:inherit;text-decoration:none;">shiki (私記)</a><span class="cursor"></span></div>
+    <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="site-nav">☰</button>
+    <nav id="site-nav">
+      <a href="../index.html#themes">Themes</a>
+      <a href="../index.html#features">Features</a>
+      <a href="../index.html#install">Install</a>
+      <a href="../documentation.html">Docs</a>
+      <a href="../changelog.html" class="active">Changelog</a>
+      <a href="../press.html">Press</a>
+      <a href="https://github.com/sazardev/shiki">GitHub</a>
+      <span class="version-chip-wrap" id="version-chip-wrap">
+        <button type="button" class="pill pill-button" id="version-pill" hidden></button>
+        <div class="version-popover" id="version-popover" role="dialog" aria-label="What's new" hidden>
+          <div class="version-popover-header">
+            <strong>What's new</strong>
+            <a href="../changelog.html">Full changelog →</a>
+          </div>
+          <div class="version-popover-body changelog-body" id="version-popover-content">
+            <p class="changelog-loading">Loading changelog…</p>
+          </div>
+        </div>
+      </span>
+    </nav>
+  </header>
+
+  <section class="doc-hero">
+    <div class="container">
+      <span class="eyebrow"><a href="../changelog.html">← Full changelog</a></span>
+      <h1>shiki v0.9.6</h1>
+      <p class="muted" style="max-width: 66ch;">Released 2026-09-20.</p>
+      <div class="release-share-row">
+        <span class="release-share-label">Share:</span>
+        <a class="release-share-link" href="https://twitter.com/intent/tweet?text=shiki%20v0.9.6%3A%20The%20default%20%28terminal-inherit%29%20theme%27s%20selected-row%20highlight%20now%20adapts%20to%20the%20terminal%27s%20own%20color%20scheme%20instead%20of%20a%20fixed%20ANSI%20darkgray%20that%20could%20be%20in%E2%80%A6&amp;url=https%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.6.html" target="_blank" rel="noopener">X</a>
+        <a class="release-share-link" href="https://bsky.app/intent/compose?text=shiki%20v0.9.6%3A%20The%20default%20%28terminal-inherit%29%20theme%27s%20selected-row%20highlight%20now%20adapts%20to%20the%20terminal%27s%20own%20color%20scheme%20instead%20of%20a%20fixed%20ANSI%20darkgray%20that%20could%20be%20in%E2%80%A6%20https%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.6.html" target="_blank" rel="noopener">Bluesky</a>
+        <a class="release-share-link" href="https://www.reddit.com/submit?url=https%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.6.html&amp;title=shiki%20v0.9.6%3A%20The%20default%20%28terminal-inherit%29%20theme%27s%20selected-row%20highlight%20now%20adapts%20to%20the%20terminal%27s%20own%20color%20scheme%20instead%20of%20a%20fixed%20ANSI%20darkgray%20that%20could%20be%20in%E2%80%A6" target="_blank" rel="noopener">Reddit</a>
+        <a class="release-share-link" href="https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.6.html&amp;t=shiki%20v0.9.6%3A%20The%20default%20%28terminal-inherit%29%20theme%27s%20selected-row%20highlight%20now%20adapts%20to%20the%20terminal%27s%20own%20color%20scheme%20instead%20of%20a%20fixed%20ANSI%20darkgray%20that%20could%20be%20in%E2%80%A6" target="_blank" rel="noopener">Hacker News</a>
+        <a class="release-share-link" href="https://wa.me/?text=shiki%20v0.9.6%3A%20The%20default%20%28terminal-inherit%29%20theme%27s%20selected-row%20highlight%20now%20adapts%20to%20the%20terminal%27s%20own%20color%20scheme%20instead%20of%20a%20fixed%20ANSI%20darkgray%20that%20could%20be%20in%E2%80%A6%20https%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.6.html" target="_blank" rel="noopener">WhatsApp</a>
+        <a class="release-share-link" href="https://t.me/share/url?url=https%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.6.html&amp;text=shiki%20v0.9.6%3A%20The%20default%20%28terminal-inherit%29%20theme%27s%20selected-row%20highlight%20now%20adapts%20to%20the%20terminal%27s%20own%20color%20scheme%20instead%20of%20a%20fixed%20ANSI%20darkgray%20that%20could%20be%20in%E2%80%A6" target="_blank" rel="noopener">Telegram</a>
+        <a class="release-share-link" href="mailto:?subject=shiki%20v0.9.6%20released&amp;body=shiki%20v0.9.6%3A%20The%20default%20%28terminal-inherit%29%20theme%27s%20selected-row%20highlight%20now%20adapts%20to%20the%20terminal%27s%20own%20color%20scheme%20instead%20of%20a%20fixed%20ANSI%20darkgray%20that%20could%20be%20in%E2%80%A6%0A%0Ahttps%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.6.html">Email</a>
+        <button type="button" class="copy-btn copy-btn-inline" data-copy-text="🚀 shiki v0.9.6 is out — The default (terminal-inherit) theme&#x27;s selected-row highlight now adapts to the terminal&#x27;s own color scheme instead of a fixed ANSI darkgray that could be in…
+
+https://sazardev.github.io/shiki/changelog/0.9.6.html
+
+#rustlang #TUI #opensource">Copy announcement</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container release-layout">
+      <div class="release-shot">
+        <div class="release-shot-frame">
+          <img src="../assets/screenshots/gruvbox-dark.png" alt="shiki v0.9.6, running in a terminal" loading="lazy" />
+        </div>
+      </div>
+      <div class="changelog-body release-notes">
+<h4>Added</h4>
+<ul>
+<li><strong>The <code>default</code> (terminal-inherit) theme&#x27;s selected-row highlight now adapts to the terminal&#x27;s own color scheme</strong> instead of a fixed ANSI <code>darkgray</code> that could be invisible against one palette and drown out the row&#x27;s accent text on another (on Ghostty&#x27;s *Aether* it resolved to <code>#ad2222</code> on <code>#4b515b</code>, ~1.15:1). <code>selection</code> accepts a new <code>&quot;auto&quot;</code> value — a 20%-alpha blend of the theme&#x27;s <code>fg</code> over its <code>bg</code>, precomputed because SGR has no alpha — which <code>default</code> now uses; since both its <code>fg</code>/<code>bg</code> slots are <code>&quot;reset&quot;</code>, the app queries the terminal&#x27;s real fg/bg over OSC 10/11 once at startup (<code>/dev/tty</code>, 120 ms budget, late replies drained so they can&#x27;t leak in as keystrokes) and falls back to the previous fixed gray when the terminal doesn&#x27;t answer (tmux without passthrough, non-VT consoles, Windows). Selected-row text on that theme now uses <code>fg</code> instead of <code>accent</code>, which is readable on a band derived from <code>fg</code> by construction. Every hex palette keeps its own hand-picked <code>selection</code> untouched, and an explicit <code>theme.overrides.selection</code> still wins.</li>
+</ul>
+<h4>Changed</h4>
+<ul>
+<li><strong>The capture pipeline now lives once in <code>shiki-core::capture</code></strong> — the CLI, the in-TUI daemon and the browser-extension native host each carried near-identical private copies of <code>with_source</code>/<code>build_capture_request</code>/<code>capture_into_new_note</code>/<code>capture_into_templated</code>/ <code>capture_into_daily</code> (88–97% identical bodies). <code>LastCapture</code> moved to <code>shiki-core</code> alongside it (<code>Config::default_last_capture_path</code> stays in <code>shiki-config</code>), and tilde expansion (<code>process::expand_home</code>), YAML scalar rendering (<code>query::yaml_value_to_string</code>) and pid/port-file parsing each have a single implementation now.</li>
+<li><strong>Preview images render off the UI thread</strong>: <code>chafa</code> runs on background threads with a width-keyed cache, showing the icon+alt fallback until the art arrives instead of blocking the next frame.</li>
+<li><strong>The footer&#x27;s revision count walks git history on a background thread</strong> (same <code>std::thread</code> + <code>mpsc</code> shape as sync/self-update), instead of a full revwalk per selected note on the UI thread.</li>
+</ul>
+<h4>Fixed</h4>
+<ul>
+<li><strong><code>shiki capture</code> from the browser extension now actually finds the running TUI daemon</strong>: the native host parsed the port file (<code>&quot;{port} {pid}&quot;</code>) as a bare number, so the parse always failed and every capture silently fell back to a direct write. Parsing is shared and tested against the real two-token format now.</li>
+<li><strong>Editing <code>config.toml</code> can no longer truncate it</strong>: a failed read used to open an empty editor buffer, and saving then overwrote the real file — an unreadable config now aborts the edit with a status message instead.</li>
+<li><strong>A failed notebook listing no longer looks like &quot;no notebooks configured&quot;</strong>: <code>store.list()</code> and per-folder listing errors are surfaced as status messages, and a failed per-note git status folds into the existing <code>status_error</code> the footer/git panel render.</li>
+<li><strong>Commits/merges no longer panic on an invalid system clock</strong> — the <code>Signature::now</code> fallback propagates as a normal error.</li>
+<li><strong>The native host&#x27;s <code>list_tags</code>/<code>search</code>/<code>recent</code> return <code>{&quot;ok&quot;: false, &quot;error&quot;: …}</code> instead of a successful empty list</strong> when the notebook walk fails (e.g. a locked encrypted notebook).</li>
+<li><strong>Whisper model downloads are verified fail-closed</strong>: the model&#x27;s sha256/size are read from Hugging Face&#x27;s git-lfs pointer and checked before install; <code>--model</code> values are restricted to a bare <code>ggml-*.bin</code> filename (no path traversal).</li>
+<li><strong>Release page for v0.9.3 added</strong> (it had been skipped by the release-automation fallback), plus the regenerated <code>sitemap.xml</code>/<code>feed.xml</code>.</li>
+</ul>
+<h4>Security</h4>
+<ul>
+<li><strong>Updated <code>rustls</code> 0.23.43 → 0.23.45</strong> (transitive via <code>reqwest</code>/<code>self_update</code>) to clear RUSTSEC-2026-0285 — TLS 1.3 handshake messages incorrectly accepted across encryption-level boundaries (medium). Its <code>aws-lc-rs</code>/<code>rustls-webpki</code> transitive deps moved with it.</li>
+<li>Verified whisper model downloads (sha256) instead of renaming an unchecked 148 MB download into place.</li>
+</ul>
+<h4>CI</h4>
+<ul>
+<li><code>--locked</code> on <code>check</code>/<code>test</code>/<code>clippy</code> (the lockfile is committed on purpose), explicit <code>contents: read</code> permissions on the desktop/nix workflows, and desktop builds fall back to an unsigned build when the Tauri signing secrets aren&#x27;t available (which made every Dependabot PR red).</li>
+</ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="release-nav">
+    <div class="container release-nav-row">
+      <a href="0.9.5.html" class="release-nav-link">← v0.9.5</a>
+      <a href="../changelog.html" class="release-nav-link">All releases</a>
+      <a href="../changelog.html" class="release-nav-link release-nav-link--disabled">No newer release →</a>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sazardev/shiki">GitHub</a>
+        <a href="https://github.com/sazardev/shiki/releases/tag/v0.9.6">GitHub Release</a>
+        <a href="https://github.com/sazardev/shiki/issues">Issues</a>
+        <a href="https://github.com/sazardev/shiki/blob/main/LICENSE">MIT License</a>
+        <a class="coffee-link" href="https://buymeacoffee.com/sazarcode">☕ Buy me a coffee</a>
+      </div>
+      <small>shiki (私記) — built by <a href="https://github.com/sazardev">sazardev</a>. Free and open source, forever.</small>
+    </div>
+  </footer>
+
+  <script src="../js/main.js"></script>
+</body>
+</html>

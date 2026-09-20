@@ -12,6 +12,43 @@
       <link>https://sazardev.github.io/shiki/changelog.html</link>
     </image>
     <item>
+      <title>shiki v0.9.6</title>
+      <link>https://sazardev.github.io/shiki/changelog/0.9.6.html</link>
+      <guid isPermaLink="true">https://sazardev.github.io/shiki/changelog/0.9.6.html</guid>
+      <pubDate>Sun, 20 Sep 2026 00:00:00 +0000</pubDate>
+      <description>The default (terminal-inherit) theme&#x27;s selected-row highlight now adapts to the terminal&#x27;s own color scheme instead of a fixed ANSI darkgray that could be in…</description>
+      <content:encoded><![CDATA[<h4>Added</h4>
+<ul>
+<li><strong>The <code>default</code> (terminal-inherit) theme&#x27;s selected-row highlight now adapts to the terminal&#x27;s own color scheme</strong> instead of a fixed ANSI <code>darkgray</code> that could be invisible against one palette and drown out the row&#x27;s accent text on another (on Ghostty&#x27;s *Aether* it resolved to <code>#ad2222</code> on <code>#4b515b</code>, ~1.15:1). <code>selection</code> accepts a new <code>&quot;auto&quot;</code> value — a 20%-alpha blend of the theme&#x27;s <code>fg</code> over its <code>bg</code>, precomputed because SGR has no alpha — which <code>default</code> now uses; since both its <code>fg</code>/<code>bg</code> slots are <code>&quot;reset&quot;</code>, the app queries the terminal&#x27;s real fg/bg over OSC 10/11 once at startup (<code>/dev/tty</code>, 120 ms budget, late replies drained so they can&#x27;t leak in as keystrokes) and falls back to the previous fixed gray when the terminal doesn&#x27;t answer (tmux without passthrough, non-VT consoles, Windows). Selected-row text on that theme now uses <code>fg</code> instead of <code>accent</code>, which is readable on a band derived from <code>fg</code> by construction. Every hex palette keeps its own hand-picked <code>selection</code> untouched, and an explicit <code>theme.overrides.selection</code> still wins.</li>
+</ul>
+<h4>Changed</h4>
+<ul>
+<li><strong>The capture pipeline now lives once in <code>shiki-core::capture</code></strong> — the CLI, the in-TUI daemon and the browser-extension native host each carried near-identical private copies of <code>with_source</code>/<code>build_capture_request</code>/<code>capture_into_new_note</code>/<code>capture_into_templated</code>/ <code>capture_into_daily</code> (88–97% identical bodies). <code>LastCapture</code> moved to <code>shiki-core</code> alongside it (<code>Config::default_last_capture_path</code> stays in <code>shiki-config</code>), and tilde expansion (<code>process::expand_home</code>), YAML scalar rendering (<code>query::yaml_value_to_string</code>) and pid/port-file parsing each have a single implementation now.</li>
+<li><strong>Preview images render off the UI thread</strong>: <code>chafa</code> runs on background threads with a width-keyed cache, showing the icon+alt fallback until the art arrives instead of blocking the next frame.</li>
+<li><strong>The footer&#x27;s revision count walks git history on a background thread</strong> (same <code>std::thread</code> + <code>mpsc</code> shape as sync/self-update), instead of a full revwalk per selected note on the UI thread.</li>
+</ul>
+<h4>Fixed</h4>
+<ul>
+<li><strong><code>shiki capture</code> from the browser extension now actually finds the running TUI daemon</strong>: the native host parsed the port file (<code>&quot;{port} {pid}&quot;</code>) as a bare number, so the parse always failed and every capture silently fell back to a direct write. Parsing is shared and tested against the real two-token format now.</li>
+<li><strong>Editing <code>config.toml</code> can no longer truncate it</strong>: a failed read used to open an empty editor buffer, and saving then overwrote the real file — an unreadable config now aborts the edit with a status message instead.</li>
+<li><strong>A failed notebook listing no longer looks like &quot;no notebooks configured&quot;</strong>: <code>store.list()</code> and per-folder listing errors are surfaced as status messages, and a failed per-note git status folds into the existing <code>status_error</code> the footer/git panel render.</li>
+<li><strong>Commits/merges no longer panic on an invalid system clock</strong> — the <code>Signature::now</code> fallback propagates as a normal error.</li>
+<li><strong>The native host&#x27;s <code>list_tags</code>/<code>search</code>/<code>recent</code> return <code>{&quot;ok&quot;: false, &quot;error&quot;: …}</code> instead of a successful empty list</strong> when the notebook walk fails (e.g. a locked encrypted notebook).</li>
+<li><strong>Whisper model downloads are verified fail-closed</strong>: the model&#x27;s sha256/size are read from Hugging Face&#x27;s git-lfs pointer and checked before install; <code>--model</code> values are restricted to a bare <code>ggml-*.bin</code> filename (no path traversal).</li>
+<li><strong>Release page for v0.9.3 added</strong> (it had been skipped by the release-automation fallback), plus the regenerated <code>sitemap.xml</code>/<code>feed.xml</code>.</li>
+</ul>
+<h4>Security</h4>
+<ul>
+<li><strong>Updated <code>rustls</code> 0.23.43 → 0.23.45</strong> (transitive via <code>reqwest</code>/<code>self_update</code>) to clear RUSTSEC-2026-0285 — TLS 1.3 handshake messages incorrectly accepted across encryption-level boundaries (medium). Its <code>aws-lc-rs</code>/<code>rustls-webpki</code> transitive deps moved with it.</li>
+<li>Verified whisper model downloads (sha256) instead of renaming an unchecked 148 MB download into place.</li>
+</ul>
+<h4>CI</h4>
+<ul>
+<li><code>--locked</code> on <code>check</code>/<code>test</code>/<code>clippy</code> (the lockfile is committed on purpose), explicit <code>contents: read</code> permissions on the desktop/nix workflows, and desktop builds fall back to an unsigned build when the Tauri signing secrets aren&#x27;t available (which made every Dependabot PR red).</li>
+</ul>]]></content:encoded>
+      <enclosure url="https://sazardev.github.io/shiki/assets/og/0.9.6.png" type="image/png" />
+    </item>
+    <item>
       <title>shiki v0.9.5</title>
       <link>https://sazardev.github.io/shiki/changelog/0.9.5.html</link>
       <guid isPermaLink="true">https://sazardev.github.io/shiki/changelog/0.9.5.html</guid>
