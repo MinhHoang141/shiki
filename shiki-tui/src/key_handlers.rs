@@ -3,11 +3,12 @@ use shiki_config::Config;
 use shiki_core::{wikilinks, Note, Notebook};
 
 use crate::app::{
-    drawer_area, global_search_layout, global_search_popup_area, is_notebook_git_action,
-    looks_like_git_url, looks_like_path, relative_folder, App, BatchOp, ConflictView, DeleteTarget,
-    EditorFindState, FindField, Focus, MetadataPrompt, Mode, PassphrasePurpose, PendingInput,
-    PreviewSelection, QuerySuggestion, QuickCommand, SelectedEntry, TrashedEntry, UpdateMsg,
-    UpdateState,
+    check_github_preflight, drawer_area, global_search_layout, global_search_popup_area,
+    is_notebook_git_action, looks_like_git_url, looks_like_path, normalize_ssh_remote,
+    relative_folder, remote_url_from_owner_repo, App, BatchOp, ConflictView, DeleteTarget,
+    EditorFindState, FindField, Focus, MetadataPrompt, Mode, NotebookSourceKind, PassphrasePurpose,
+    PendingInput, PreviewSelection, QuerySuggestion, QuickCommand, SelectedEntry, TrashedEntry,
+    UpdateMsg, UpdateState,
 };
 use crate::editor::InlineEditor;
 use crate::icons;
@@ -47,6 +48,8 @@ impl App {
             self.settings_notebook_drill = None;
             self.settings_snippet_drill = None;
             self.settings_field_selected = 0;
+            self.settings_filter_active = false;
+            self.settings_query.clear();
         }
     }
     /// Left/right always means "change tab," regardless of whether
@@ -65,9 +68,15 @@ impl App {
         self.settings_notebook_drill = None;
         self.settings_snippet_drill = None;
         self.settings_field_selected = 0;
+        self.settings_filter_active = false;
+        self.settings_query.clear();
     }
+    /// Level-1 row count `Home`/`End`/`PageUp`/`PageDown`/`j`/`k` bound
+    /// against — the *filtered* length once `/` has narrowed the list (see
+    /// `panel_settings::filtered_indices`), matching `build`'s raw count
+    /// whenever the query is empty.
     fn settings_row_count(&self) -> usize {
-        crate::panel_settings::build(self).len()
+        crate::panel_settings::filtered_indices(self, &self.settings_query).len()
     }
     fn handle_settings_key(&mut self, key: KeyEvent) {
         use crate::panel_settings::SettingsSection;
@@ -90,8 +99,16 @@ impl App {
             self.handle_settings_snippet_field_key(key);
             return;
         }
+        if self.settings_filter_active {
+            self.handle_settings_filter_key(key);
+            return;
+        }
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => self.show_settings = false,
+            // Level 1 only (see `settings_filter_active`'s doc comment) —
+            // opens the live filter row; every key routes to
+            // `handle_settings_filter_key` from here until `Esc` closes it.
+            KeyCode::Char('/') => self.settings_filter_active = true,
             KeyCode::Char('j') | KeyCode::Down => {
                 let len = self.settings_row_count();
                 if self.settings_selected + 1 < len {
@@ -117,28 +134,10 @@ impl App {
             // calls for — toggle a boolean, open a prompt, open the theme
             // picker, or drill into a notebook/snippet. Each section's own
             // handler decides which of those it is; see each fn's doc
-            // comment for that section's specific field list.
-            KeyCode::Enter | KeyCode::Char('l') => match self.settings_section {
-                SettingsSection::General => self.handle_general_field_enter(),
-                SettingsSection::Theme => self.handle_theme_field_enter(),
-                SettingsSection::Git => self.handle_git_field_enter(),
-                SettingsSection::Editor => self.handle_editor_field_enter(),
-                SettingsSection::Export => self.handle_export_field_enter(),
-                SettingsSection::Notebooks => {
-                    let names = crate::panel_settings::sorted_notebook_names(self);
-                    if let Some(name) = names.get(self.settings_selected) {
-                        self.settings_notebook_drill = Some(name.clone());
-                        self.settings_field_selected = 0;
-                    }
-                }
-                SettingsSection::Snippets => {
-                    let triggers = crate::panel_settings::sorted_snippet_triggers(self);
-                    if let Some(trigger) = triggers.get(self.settings_selected) {
-                        self.settings_snippet_drill = Some(trigger.clone());
-                        self.settings_field_selected = 0;
-                    }
-                }
-            },
+            // comment for that section's specific field list. Shared with
+            // `handle_settings_filter_key`'s own `Enter`, so filtering and
+            // browsing can't act on a field two different ways.
+            KeyCode::Enter | KeyCode::Char('l') => self.dispatch_settings_enter(),
             // SNIPPETS-only: create/delete a snippet at level 1. A no-op in
             // every other tab (nothing else in Settings has a variable-size
             // collection you'd want to add/remove entries from this way).
@@ -170,120 +169,106 @@ impl App {
             _ => {}
         }
     }
+    /// Level 1's `/` filter — same "type to narrow, arrows move, Enter acts
+    /// on the filtered list" shape as the outline modal's live filter
+    /// (`handle_outline_key`), just gated behind an explicit toggle instead
+    /// of always-on, since Settings (unlike outline) has real letter
+    /// shortcuts (`a`/`d`/`i`/`E`) that need their keys back the moment
+    /// nothing's actively being typed.
+    fn handle_settings_filter_key(&mut self, key: KeyEvent) {
+        match key.code {
+            // Exits filter mode without closing Settings — lands on the
+            // same row that was selected within the filtered list (resolved
+            // to its real, unfiltered index first) rather than jumping back
+            // to row 0, so "search, land on it, Esc, then `d`/`m`/whatever"
+            // stays a two-keystroke motion instead of losing the selection.
+            KeyCode::Esc => {
+                let real = crate::panel_settings::selected_real_index(self).unwrap_or(0);
+                self.settings_query.clear();
+                self.settings_filter_active = false;
+                self.settings_selected = real;
+            }
+            KeyCode::Char(c) if !c.is_control() => {
+                self.settings_query.push(c);
+                self.settings_selected = 0;
+            }
+            KeyCode::Backspace => {
+                self.settings_query.pop();
+                self.settings_selected = 0;
+            }
+            KeyCode::Enter => self.dispatch_settings_enter(),
+            KeyCode::Down => {
+                let len = self.settings_row_count();
+                if self.settings_selected + 1 < len {
+                    self.settings_selected += 1;
+                }
+            }
+            KeyCode::Up => self.settings_selected = self.settings_selected.saturating_sub(1),
+            KeyCode::PageDown => {
+                let len = self.settings_row_count();
+                self.settings_selected =
+                    (self.settings_selected + self.page_step() as usize).min(len.saturating_sub(1));
+            }
+            KeyCode::PageUp => {
+                self.settings_selected = self
+                    .settings_selected
+                    .saturating_sub(self.page_step() as usize);
+            }
+            KeyCode::Home => self.settings_selected = 0,
+            KeyCode::End => self.settings_selected = self.settings_row_count().saturating_sub(1),
+            _ => {}
+        }
+    }
+    /// The shared tail of level-1 `Enter` — whatever the current tab's
+    /// selected row calls for, resolved through the active `/` filter (a
+    /// no-op if the filter currently matches nothing at all). Drilling into
+    /// a NOTEBOOKS/SNIPPETS row also clears the filter, since level 2 never
+    /// filters — leaving it set would be invisible, stale state the moment
+    /// `h`/`Esc`/`Backspace` comes back out to level 1.
+    fn dispatch_settings_enter(&mut self) {
+        use crate::panel_settings::SettingsSection;
+        match self.settings_section {
+            SettingsSection::General => self.handle_general_field_enter(),
+            SettingsSection::Theme => self.handle_theme_field_enter(),
+            SettingsSection::Git => self.handle_git_field_enter(),
+            SettingsSection::Editor => self.handle_editor_field_enter(),
+            SettingsSection::Export => self.handle_export_field_enter(),
+            SettingsSection::Notebooks => {
+                let names = crate::panel_settings::sorted_notebook_names(self);
+                if let Some(name) = crate::panel_settings::selected_real_index(self)
+                    .and_then(|real| names.get(real))
+                {
+                    self.settings_notebook_drill = Some(name.clone());
+                    self.settings_field_selected = 0;
+                    self.settings_query.clear();
+                    self.settings_filter_active = false;
+                }
+            }
+            SettingsSection::Snippets => {
+                let triggers = crate::panel_settings::sorted_snippet_triggers(self);
+                if let Some(trigger) = crate::panel_settings::selected_real_index(self)
+                    .and_then(|real| triggers.get(real))
+                {
+                    self.settings_snippet_drill = Some(trigger.clone());
+                    self.settings_field_selected = 0;
+                    self.settings_query.clear();
+                    self.settings_filter_active = false;
+                }
+            }
+        }
+    }
     /// GENERAL — `use_favorite_editor`/`mouse_drag_selection`/`show_hints`
     /// toggle in place; the three text fields open a single-line prompt
     /// (`PendingInput::SettingsGeneralText`, resolved back to a field via
-    /// `GeneralField::ALL[settings_selected]` once it's confirmed).
+    /// `GeneralField::ALL[settings_selected]`, filter-resolved the same way
+    /// this `Enter` press itself was, once it's confirmed).
     fn handle_general_field_enter(&mut self) {
         use crate::panel_settings::GeneralField;
-        let field = GeneralField::ALL[self.settings_selected];
-        if field == GeneralField::UseFavoriteEditor {
-            self.config.general.use_favorite_editor = !self.config.general.use_favorite_editor;
-            self.save_config();
-            self.set_status(format!(
-                "use_favorite_editor -> {}",
-                self.config.general.use_favorite_editor
-            ));
+        let Some(real) = crate::panel_settings::selected_real_index(self) else {
             return;
-        }
-        if field == GeneralField::EnableCaptureDaemon {
-            let new_value = !self.config.general.enable_capture_daemon;
-            self.set_capture_daemon_enabled(new_value);
-            return;
-        }
-        if field == GeneralField::MouseDragSelection {
-            self.config.general.mouse_drag_selection = !self.config.general.mouse_drag_selection;
-            self.save_config();
-            self.set_status(format!(
-                "mouse_drag_selection -> {}",
-                self.config.general.mouse_drag_selection
-            ));
-            return;
-        }
-        if field == GeneralField::ShowHints {
-            self.config.general.show_hints = !self.config.general.show_hints;
-            self.save_config();
-            self.set_status(format!("show_hints -> {}", self.config.general.show_hints));
-            return;
-        }
-        if field == GeneralField::RememberLastSession {
-            self.config.general.remember_last_session = !self.config.general.remember_last_session;
-            self.save_config();
-            self.set_status(format!(
-                "remember_last_session -> {}",
-                self.config.general.remember_last_session
-            ));
-            return;
-        }
-        if field == GeneralField::ShowCoffeeLink {
-            self.config.general.show_coffee_link = !self.config.general.show_coffee_link;
-            self.save_config();
-            self.set_status(format!(
-                "show_coffee_link -> {}",
-                self.config.general.show_coffee_link
-            ));
-            return;
-        }
-        if field == GeneralField::SkipDeleteConfirm {
-            self.config.general.skip_delete_confirm = !self.config.general.skip_delete_confirm;
-            self.save_config();
-            self.set_status(format!(
-                "skip_delete_confirm -> {}",
-                self.config.general.skip_delete_confirm
-            ));
-            return;
-        }
-        if field == GeneralField::ShowDates {
-            self.config.general.show_dates = !self.config.general.show_dates;
-            self.show_dates = self.config.general.show_dates;
-            self.save_config();
-            self.set_status(format!("show_dates -> {}", self.config.general.show_dates));
-            return;
-        }
-        if field == GeneralField::WikilinkAutocomplete {
-            self.config.general.wikilink_autocomplete = !self.config.general.wikilink_autocomplete;
-            self.save_config();
-            self.set_status(format!(
-                "wikilink_autocomplete -> {}",
-                self.config.general.wikilink_autocomplete
-            ));
-            return;
-        }
-        if field == GeneralField::DailyAgenda {
-            self.config.general.daily_agenda = !self.config.general.daily_agenda;
-            self.save_config();
-            self.set_status(format!(
-                "daily_agenda -> {}",
-                self.config.general.daily_agenda
-            ));
-            return;
-        }
-        if field == GeneralField::CompactFooter {
-            self.config.general.compact_footer = !self.config.general.compact_footer;
-            self.save_config();
-            self.set_status(format!(
-                "compact_footer -> {}",
-                self.config.general.compact_footer
-            ));
-            return;
-        }
-        if field == GeneralField::TasksShowDoneDefault {
-            self.config.general.tasks_show_done_default =
-                !self.config.general.tasks_show_done_default;
-            self.save_config();
-            self.set_status(format!(
-                "tasks_show_done_default -> {}",
-                self.config.general.tasks_show_done_default
-            ));
-            return;
-        }
-        if field == GeneralField::PreviewImages {
-            self.config.general.preview_images = !self.config.general.preview_images;
-            self.save_config();
-            self.set_status(format!(
-                "preview_images -> {}",
-                self.config.general.preview_images
-            ));
+        };
+        let field = GeneralField::ALL[real];
+        if self.toggle_general_bool(field) {
             return;
         }
         let (label, prefill) = match field {
@@ -338,12 +323,130 @@ impl App {
             | GeneralField::WikilinkAutocomplete
             | GeneralField::DailyAgenda
             | GeneralField::CompactFooter
+            | GeneralField::ShowBorders
             | GeneralField::TasksShowDoneDefault
-            | GeneralField::PreviewImages => unreachable!(),
+            | GeneralField::PreviewImages
+            | GeneralField::AutoPullOnSwitch => unreachable!(),
         };
+        self.settings_reopen_after_prompt = self.show_settings;
         self.show_settings = false;
         self.pending_input_title = Some(format!(" {label} "));
         self.start_input(PendingInput::SettingsGeneralText, prefill);
+    }
+    /// GENERAL's boolean fields, factored out of `handle_general_field_enter`
+    /// so which-key's config-field rows (`App::activate_config_field`) can
+    /// flip one in place too, without needing `settings_selected`/a Settings
+    /// tab to be open at all — same shape as the pre-existing
+    /// `toggle_git_bool`/`toggle_editor_bool`. Returns whether `field` was
+    /// actually one of these (and got toggled); the caller falls through to
+    /// the text-prompt path otherwise.
+    fn toggle_general_bool(&mut self, field: crate::panel_settings::GeneralField) -> bool {
+        use crate::panel_settings::GeneralField;
+        let (label, new_val) = match field {
+            GeneralField::UseFavoriteEditor => {
+                self.config.general.use_favorite_editor = !self.config.general.use_favorite_editor;
+                (
+                    "use_favorite_editor",
+                    self.config.general.use_favorite_editor,
+                )
+            }
+            GeneralField::EnableCaptureDaemon => {
+                let new_value = !self.config.general.enable_capture_daemon;
+                self.set_capture_daemon_enabled(new_value);
+                return true;
+            }
+            GeneralField::MouseDragSelection => {
+                self.config.general.mouse_drag_selection =
+                    !self.config.general.mouse_drag_selection;
+                (
+                    "mouse_drag_selection",
+                    self.config.general.mouse_drag_selection,
+                )
+            }
+            GeneralField::ShowHints => {
+                self.config.general.show_hints = !self.config.general.show_hints;
+                ("show_hints", self.config.general.show_hints)
+            }
+            GeneralField::RememberLastSession => {
+                self.config.general.remember_last_session =
+                    !self.config.general.remember_last_session;
+                (
+                    "remember_last_session",
+                    self.config.general.remember_last_session,
+                )
+            }
+            GeneralField::ShowCoffeeLink => {
+                self.config.general.show_coffee_link = !self.config.general.show_coffee_link;
+                ("show_coffee_link", self.config.general.show_coffee_link)
+            }
+            GeneralField::SkipDeleteConfirm => {
+                self.config.general.skip_delete_confirm = !self.config.general.skip_delete_confirm;
+                (
+                    "skip_delete_confirm",
+                    self.config.general.skip_delete_confirm,
+                )
+            }
+            GeneralField::ShowDates => {
+                self.config.general.show_dates = !self.config.general.show_dates;
+                self.show_dates = self.config.general.show_dates;
+                ("show_dates", self.config.general.show_dates)
+            }
+            GeneralField::WikilinkAutocomplete => {
+                self.config.general.wikilink_autocomplete =
+                    !self.config.general.wikilink_autocomplete;
+                (
+                    "wikilink_autocomplete",
+                    self.config.general.wikilink_autocomplete,
+                )
+            }
+            GeneralField::DailyAgenda => {
+                self.config.general.daily_agenda = !self.config.general.daily_agenda;
+                ("daily_agenda", self.config.general.daily_agenda)
+            }
+            GeneralField::CompactFooter => {
+                self.config.general.compact_footer = !self.config.general.compact_footer;
+                ("compact_footer", self.config.general.compact_footer)
+            }
+            GeneralField::ShowBorders => {
+                self.config.general.show_borders = !self.config.general.show_borders;
+                ("show_borders", self.config.general.show_borders)
+            }
+            GeneralField::TasksShowDoneDefault => {
+                self.config.general.tasks_show_done_default =
+                    !self.config.general.tasks_show_done_default;
+                (
+                    "tasks_show_done_default",
+                    self.config.general.tasks_show_done_default,
+                )
+            }
+            GeneralField::PreviewImages => {
+                self.config.general.preview_images = !self.config.general.preview_images;
+                ("preview_images", self.config.general.preview_images)
+            }
+            GeneralField::AutoPullOnSwitch => {
+                self.config.general.auto_pull_on_switch = !self.config.general.auto_pull_on_switch;
+                (
+                    "auto_pull_on_switch",
+                    self.config.general.auto_pull_on_switch,
+                )
+            }
+            GeneralField::DefaultNotebook
+            | GeneralField::Editor
+            | GeneralField::DailyTemplate
+            | GeneralField::StatusMessageTimeoutSecs
+            | GeneralField::DrawerWidth
+            | GeneralField::DefaultNoteSort
+            | GeneralField::LogHistoryLimit
+            | GeneralField::TrashRetentionDays
+            | GeneralField::ReadingWpm
+            | GeneralField::PageStep
+            | GeneralField::ChafaPath
+            | GeneralField::PreviewImageScale
+            | GeneralField::AttachmentsDir => return false,
+        };
+        self.save_config();
+        self.set_status(format!("{label} -> {new_val}"));
+        true
     }
     /// THEME — `name` opens the existing theme picker (reusing its
     /// live-preview/commit logic rather than duplicating it); `icons`
@@ -352,7 +455,10 @@ impl App {
     /// individual color slots don't fit a single-row edit.
     fn handle_theme_field_enter(&mut self) {
         use crate::panel_settings::ThemeField;
-        match ThemeField::ALL[self.settings_selected] {
+        let Some(real) = crate::panel_settings::selected_real_index(self) else {
+            return;
+        };
+        match ThemeField::ALL[real] {
             ThemeField::Name => {
                 self.show_settings = false;
                 self.reopen_settings_after_theme_picker = true;
@@ -377,7 +483,10 @@ impl App {
     /// `SettingsGeneralText` is).
     fn handle_git_field_enter(&mut self) {
         use crate::panel_settings::GitField;
-        let field = GitField::ALL[self.settings_selected];
+        let Some(real) = crate::panel_settings::selected_real_index(self) else {
+            return;
+        };
+        let field = GitField::ALL[real];
         match field {
             GitField::AutoCommit
             | GitField::AutoPush
@@ -387,6 +496,7 @@ impl App {
             }
             GitField::AutoSyncEvery => {
                 let prefill = self.config.git.auto_sync_every.to_string();
+                self.settings_reopen_after_prompt = self.show_settings;
                 self.show_settings = false;
                 self.pending_input_title = Some(" auto_sync_every ".to_string());
                 self.start_input(PendingInput::SettingsGitText, prefill);
@@ -406,6 +516,7 @@ impl App {
                     }
                     _ => unreachable!(),
                 };
+                self.settings_reopen_after_prompt = self.show_settings;
                 self.show_settings = false;
                 self.pending_input_title = Some(format!(" {label} "));
                 self.start_input(PendingInput::SettingsGitText, prefill);
@@ -442,8 +553,12 @@ impl App {
     /// `SettingsGeneralText` path as GENERAL's text rows.)
     fn handle_editor_field_enter(&mut self) {
         use crate::panel_settings::EditorField;
-        let field = EditorField::ALL[self.settings_selected];
+        let Some(real) = crate::panel_settings::selected_real_index(self) else {
+            return;
+        };
+        let field = EditorField::ALL[real];
         if field == EditorField::SpellcheckLang {
+            self.settings_reopen_after_prompt = self.show_settings;
             self.show_settings = false;
             self.pending_input_title = Some(" spellcheck_lang ".into());
             self.start_input(
@@ -559,7 +674,10 @@ impl App {
     /// `SettingsGeneralText`/`SettingsGitText`).
     fn handle_export_field_enter(&mut self) {
         use crate::panel_settings::{ExportField, PDF_THEMES};
-        match ExportField::ALL[self.settings_selected] {
+        let Some(real) = crate::panel_settings::selected_real_index(self) else {
+            return;
+        };
+        match ExportField::ALL[real] {
             ExportField::PdfTheme => {
                 let current = self.config.export.pdf_theme.as_str();
                 let next_index = PDF_THEMES
@@ -581,6 +699,7 @@ impl App {
             }
             ExportField::ExportDir => {
                 let prefill = self.config.export.export_dir.clone();
+                self.settings_reopen_after_prompt = self.show_settings;
                 self.show_settings = false;
                 self.pending_input_title = Some(" export_dir ".to_string());
                 self.start_input(PendingInput::SettingsExportText, prefill);
@@ -686,6 +805,19 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => {
                 self.settings_field_selected = self.settings_field_selected.saturating_sub(1);
             }
+            // Clones this notebook's fully-resolved theme (base name, all 19
+            // color slots, icons) onto every *other* notebook — a bulk
+            // "maximum customization, applied everywhere" shortcut, confirmed
+            // first since it overwrites every other notebook's own theme
+            // fields. Available anywhere in this notebook's field list, not
+            // gated to the `ThemeOverrides` row, same as `a`/`d` in SNIPPETS
+            // aren't gated to any particular row either.
+            KeyCode::Char('A') => {
+                self.pending_apply_theme_all = Some(name.clone());
+                self.confirm = Some(crate::confirm::ConfirmDialog::new(format!(
+                    "apply '{name}'s theme to every other notebook?"
+                )));
+            }
             KeyCode::Enter => match NotebookField::ALL[self.settings_field_selected] {
                 NotebookField::Remote => {
                     let prefill = self
@@ -738,6 +870,16 @@ impl App {
                     self.settings_field_selected = 0;
                     self.set_status(format!("notebook '{name}' restored — it's listed again"));
                 }
+                NotebookField::Icons => {
+                    self.cycle_notebook_bool_override(&name, NotebookField::Icons);
+                    self.refresh_theme_for_selected_notebook();
+                }
+                NotebookField::ThemeOverrides => {
+                    self.set_status(format!(
+                        "customize this notebook's 19 colors with `shiki theme create --from <name> --notebook {name}`, \
+                         or press 'A' here to clone another notebook's look onto all of them"
+                    ));
+                }
             },
             _ => {}
         }
@@ -770,10 +912,19 @@ impl App {
                 };
                 ("auto_sync", over.auto_sync)
             }
+            NotebookField::Icons => {
+                over.theme_icons = match over.theme_icons {
+                    None => Some(true),
+                    Some(true) => Some(false),
+                    Some(false) => None,
+                };
+                ("icons", over.theme_icons)
+            }
             NotebookField::Remote
             | NotebookField::AutoSyncEvery
             | NotebookField::Encryption
-            | NotebookField::Hidden => return,
+            | NotebookField::Hidden
+            | NotebookField::ThemeOverrides => return,
         };
         self.prune_empty_notebook_override(name);
         self.save_config();
@@ -793,10 +944,44 @@ impl App {
                 && over.auto_sync_every.is_none()
                 && !over.hidden
                 && !over.encrypt
+                && over.theme_name.is_none()
+                && over.theme_icons.is_none()
+                && over.theme_overrides == Default::default()
             {
                 self.config.notebooks.remove(name);
             }
         }
+    }
+    /// Clones `source`'s fully-resolved theme (base name, all 19 color
+    /// slots, icons — whichever it currently effectively shows, inherited or
+    /// already customized) onto every *other* notebook's `[notebooks.<name>]`
+    /// entry, overwriting whatever theme fields they had. One mechanism
+    /// covers both "same simple theme everywhere" and "propagate my
+    /// hand-tuned palette everywhere" — `source` doesn't need anything
+    /// explicitly set of its own for this to work, since it clones the
+    /// *resolved* theme, not just whatever override fields happen to be set.
+    fn apply_theme_to_all_notebooks(&mut self, source: &str) {
+        let resolved = self.config.theme_for(Some(source));
+        let icons = self.config.icons_for(Some(source));
+        let overrides = shiki_config::config::ThemeOverrides::from_theme(&resolved);
+        let targets: Vec<String> = self
+            .notebooks
+            .iter()
+            .map(|nb| nb.name.clone())
+            .filter(|name| name != source)
+            .collect();
+        let count = targets.len();
+        for name in targets {
+            let over = self.config.notebooks.entry(name).or_default();
+            over.theme_name = Some(resolved.name.clone());
+            over.theme_icons = Some(icons);
+            over.theme_overrides = overrides.clone();
+        }
+        self.save_config();
+        self.refresh_theme_for_selected_notebook();
+        self.set_status(format!(
+            "applied '{source}'s theme to {count} other notebook(s)"
+        ));
     }
     pub(crate) fn save_config(&mut self) {
         if let Ok(path) = Config::default_path() {
@@ -1248,6 +1433,41 @@ impl App {
     }
 
     /// Non-blocking: called once per `run()` loop iteration, same spot as
+    /// `poll_update_channel`. Applies the new-notebook wizard's GitHub
+    /// preflight check the moment it resolves — `Some(warning)` becomes a
+    /// status message, `None` (everything looked reachable, or `gh` isn't
+    /// installed at all) stays silent, since this is purely advisory and
+    /// never blocked the actual clone attempt in the first place.
+    pub(crate) fn poll_gh_preflight_channel(&mut self) {
+        let Some(rx) = &self.gh_preflight_rx else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(Some(warning)) => {
+                self.set_status(warning);
+                self.gh_preflight_rx = None;
+            }
+            Ok(None) => self.gh_preflight_rx = None,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.gh_preflight_rx = None,
+        }
+    }
+    /// Kicks off the background `gh` reachability check for `owner_repo` —
+    /// fire-and-forget, same `std::thread::spawn` + fresh `mpsc::channel`
+    /// shape as self-update's own background thread. Only one check is ever
+    /// in flight (a new one replaces the receiver for any still-running
+    /// previous one, which just gets its result silently discarded) — this
+    /// only ever fires once per wizard use in practice, so there's no real
+    /// contention to guard against.
+    pub(crate) fn spawn_github_preflight(&mut self, owner_repo: String) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(check_github_preflight(&owner_repo));
+        });
+        self.gh_preflight_rx = Some(rx);
+    }
+
+    /// Non-blocking: called once per `run()` loop iteration, same spot as
     /// `poll_update_channel`/`poll_sync_channel`. Drains every pending
     /// `CaptureRequest`, not just one — several `shiki capture` invocations
     /// could queue up between two frames — and answers each one over its
@@ -1328,8 +1548,13 @@ impl App {
     /// Every keybinding entry whose key, action label, or scope name
     /// contains the current query (case-insensitive) — all of them if the
     /// query is empty — plus, once the query is non-empty, up to 8 matching
-    /// notes from `which_key_note_hits` (see `refresh_which_key_notes`).
-    /// Backs both rendering and `Enter`'s execute-in-place.
+    /// notes from `which_key_note_hits` (see `refresh_which_key_notes`) and
+    /// every GENERAL/GIT/EDITOR/EXPORT/THEME.icons field whose text matches
+    /// (see `config_field_rows`) — same "only once you're actually
+    /// searching for something" reasoning `NoteHit` already established, so
+    /// browsing which-key with an empty query still reads as just "every
+    /// keybinding," not also every config field in the app. Backs both
+    /// rendering and `Enter`'s execute-in-place.
     pub fn which_key_filtered_entries(&self) -> Vec<WhichKeyRow> {
         let query = self.which_key_input.value.to_lowercase();
         let bound = self
@@ -1358,7 +1583,91 @@ impl App {
                 label: format!("{}  —  {}", note.frontmatter.title, nb.name),
             })
         }));
+        if !query.is_empty() {
+            rows.extend(
+                self.config_field_rows()
+                    .into_iter()
+                    .filter(|row| row.label().to_lowercase().contains(&query)),
+            );
+        }
         rows
+    }
+    /// Every GENERAL/GIT/EDITOR/EXPORT field, plus THEME's `icons`, as
+    /// which-key rows — lets a config value be found and changed straight
+    /// from the command palette instead of opening Settings and hunting
+    /// through tabs (see `App::activate_config_field`, which `Enter` on one
+    /// of these calls). Drill-down sections (NOTEBOOKS/SNIPPETS) and
+    /// THEME's `name`/`overrides` aren't included: those need a real modal
+    /// (the theme picker, or a specific notebook/snippet), not a one-line
+    /// palette entry. `text` reuses each field's exact rendered "label +
+    /// current value" (`panel_settings::line_text`), the same string
+    /// Settings itself shows, so the two can't drift apart.
+    fn config_field_rows(&self) -> Vec<WhichKeyRow> {
+        use crate::panel_settings::{
+            editor_rows, export_rows, general_rows, git_rows, line_text, theme_rows,
+            SettingsSection,
+        };
+        let mut rows = Vec::new();
+        for (i, line) in general_rows(self).iter().enumerate() {
+            rows.push(WhichKeyRow::ConfigField {
+                section: SettingsSection::General,
+                index: i,
+                text: format!("general.{}", line_text(line).trim_start()),
+            });
+        }
+        for (i, line) in git_rows(self).iter().enumerate() {
+            rows.push(WhichKeyRow::ConfigField {
+                section: SettingsSection::Git,
+                index: i,
+                text: format!("git.{}", line_text(line).trim_start()),
+            });
+        }
+        for (i, line) in editor_rows(self).iter().enumerate() {
+            rows.push(WhichKeyRow::ConfigField {
+                section: SettingsSection::Editor,
+                index: i,
+                text: format!("editor.{}", line_text(line).trim_start()),
+            });
+        }
+        for (i, line) in export_rows(self).iter().enumerate() {
+            rows.push(WhichKeyRow::ConfigField {
+                section: SettingsSection::Export,
+                index: i,
+                text: format!("export.{}", line_text(line).trim_start()),
+            });
+        }
+        if let Some(line) = theme_rows(self).get(1) {
+            rows.push(WhichKeyRow::ConfigField {
+                section: SettingsSection::Theme,
+                index: 1,
+                text: format!("theme.{}", line_text(line).trim_start()),
+            });
+        }
+        rows
+    }
+    /// `Enter` on a which-key `ConfigField` row — stages the exact
+    /// `(section, index)` Settings' own `Enter` would already be pointing
+    /// at (clearing any stale filter/drill state first, none of which
+    /// applies here since config-field rows only ever come from a flat,
+    /// unfiltered level-1 list) and calls the identical
+    /// `dispatch_settings_enter` Settings itself uses — a boolean/cycle
+    /// field flips immediately with no modal shown at all; a text field
+    /// opens the normal prompt standalone (Settings never actually opens,
+    /// see `settings_reopen_after_prompt`).
+    fn activate_config_field(
+        &mut self,
+        section: crate::panel_settings::SettingsSection,
+        index: usize,
+    ) {
+        self.show_which_key = false;
+        self.settings_section = section;
+        self.settings_selected = index;
+        self.settings_notebook_drill = None;
+        self.settings_snippet_drill = None;
+        self.settings_field_selected = 0;
+        self.settings_filter_active = false;
+        self.settings_query.clear();
+        self.dispatch_settings_enter();
     }
     fn handle_which_key_key(&mut self, key: KeyEvent) {
         let len = self.which_key_filtered_entries().len();
@@ -1382,6 +1691,9 @@ impl App {
                     Some(WhichKeyRow::NoteHit { pool_index, .. }) => {
                         self.show_which_key = false;
                         self.jump_to_global_hit(pool_index);
+                    }
+                    Some(WhichKeyRow::ConfigField { section, index, .. }) => {
+                        self.activate_config_field(section, index);
                     }
                     Some(WhichKeyRow::Nav { .. }) | None => {}
                 }
@@ -4653,6 +4965,64 @@ impl App {
         self.show_template_picker = false;
         self.create_note_with_template(title, template_choice);
     }
+    /// The new-notebook wizard's source-kind menu — the *first* thing `a`
+    /// (`Action::NewNotebook`) opens now, before any name is even typed, so
+    /// "where should this notebook come from?" is decided up front instead
+    /// of as a follow-up question after naming a plain one.
+    /// `j`/`k` navigate; `Esc`/`q` cancels outright (nothing was created
+    /// yet, so there's nothing to clean up); `Enter`/`l` opens whichever
+    /// prompt the selection calls for.
+    fn handle_notebook_source_picker_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => self.finish_notebook_source_picker(None),
+            KeyCode::Char('j') | KeyCode::Down => {
+                if self.notebook_source_index + 1 < NotebookSourceKind::ALL.len() {
+                    self.notebook_source_index += 1;
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.notebook_source_index = self.notebook_source_index.saturating_sub(1);
+            }
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+                let kind = NotebookSourceKind::ALL[self.notebook_source_index];
+                self.finish_notebook_source_picker(Some(kind));
+            }
+            _ => {}
+        }
+    }
+    /// Closes the source-kind picker and opens whichever prompt the
+    /// selection calls for — `None` (Esc/`q`) just closes it, since nothing
+    /// has been created yet at this point. **Local** opens the plain
+    /// name prompt (`PendingInput::NewNotebook`, unchanged); every other
+    /// kind opens its own guided prompt, each of which derives the
+    /// notebook's name from what's typed rather than asking for one
+    /// separately (see `App::create_notebook_from_url`).
+    fn finish_notebook_source_picker(&mut self, kind: Option<NotebookSourceKind>) {
+        self.show_notebook_source_picker = false;
+        let Some(kind) = kind else {
+            self.set_status("new notebook cancelled".into());
+            return;
+        };
+        match kind {
+            NotebookSourceKind::Local => self.start_input(PendingInput::NewNotebook, String::new()),
+            NotebookSourceKind::GitHub => {
+                self.start_input(PendingInput::NewNotebookGitHubRepo, String::new())
+            }
+            NotebookSourceKind::GitLab => {
+                self.start_input(PendingInput::NewNotebookGitLabRepo, String::new())
+            }
+            NotebookSourceKind::GenericGit => {
+                self.start_input(PendingInput::NewNotebookRemote, String::new())
+            }
+            NotebookSourceKind::Ssh => {
+                if !shiki_core::process::ssh_agent_or_key_available() {
+                    self.pending_input_title =
+                        Some(" SSH remote — no SSH key/agent detected, this may fail ".into());
+                }
+                self.start_input(PendingInput::NewNotebookSshRemote, String::new());
+            }
+        }
+    }
     /// Creates a note titled `title` in the current folder, with the given
     /// template's rendered body (or an empty one for `None`, "blank") — the
     /// single shared creation path for both the `show_template_picker` flow
@@ -4756,6 +5126,7 @@ impl App {
             ratatui::text::Line::from(title),
             true,
             &self.theme,
+            self.config.general.show_borders,
         ));
         editor.textarea.set_style(
             ratatui::style::Style::default()
@@ -4978,7 +5349,10 @@ impl App {
             Action::ExportNotebook => self.start_export_notebook(),
             Action::ToggleZenMode => self.toggle_zen_mode(),
 
-            Action::NewNotebook => self.start_input(PendingInput::NewNotebook, String::new()),
+            Action::NewNotebook => {
+                self.notebook_source_index = 0;
+                self.show_notebook_source_picker = true;
+            }
             Action::RenameNotebook => self.start_rename_notebook(),
             Action::DeleteNotebook => self.start_delete_notebook(),
             Action::SyncNotebook => self.sync_notebook(),
@@ -5111,12 +5485,20 @@ impl App {
                 }
             }
             Some(PendingInput::NewNotebook) => {
-                // Pasting a URL is the "import someone else's repo" fast
-                // path: derive the name from the repo, create, set the
-                // remote, and pull, instead of new notebook + name + `R` +
-                // URL + `p` as four separate steps.
+                // Reached via the source-kind picker's **Local** choice —
+                // still detects a pasted URL/path as a defensive fallback
+                // (picking Local out of habit, then pasting one anyway,
+                // still gets the sensible outcome), but the normal case is
+                // a plain name with no further questions asked (the picker
+                // already covers "connect to a remote?" up front now).
                 if !value.is_empty() && looks_like_git_url(&value) {
-                    self.create_notebook_from_url(&value);
+                    match self.create_notebook_from_url(&value) {
+                        Ok(status) => self.set_status(status),
+                        Err(e) => {
+                            self.set_status(e.clone());
+                            self.reopen_input_with_error(PendingInput::NewNotebook, value, e);
+                        }
+                    }
                 } else if !value.is_empty() && looks_like_path(&value) {
                     // Pointing at `/abs/path`, `~/docs`, or `./relative`
                     // adopts that existing directory as a notebook instead
@@ -5161,44 +5543,75 @@ impl App {
                                         status = format!("{status}, but could not set remote: {e}")
                                     }
                                 }
-                                self.set_status(status);
-                            } else {
-                                self.set_status(status);
-                                // No template covers this notebook — the one
-                                // onboarding question: want it synced to a Git
-                                // remote? Empty Enter skips and never asks
-                                // about *this* notebook again; `R` always works.
-                                self.pending_new_notebook_remote = Some(name.clone());
-                                self.start_input(PendingInput::NewNotebookRemote, String::new());
                             }
+                            self.set_status(status);
                         }
                         Err(e) => self.set_status(format!("could not create: {e}")),
                     }
                 }
             }
             Some(PendingInput::NewNotebookRemote) => {
-                let Some(name) = self.pending_new_notebook_remote.take() else {
-                    return;
-                };
+                // The picker's **Generic Git URL** entry — a full URL (any
+                // host/provider) or a local path to adopt, same free-text
+                // shape this prompt always had.
                 if value.is_empty() {
-                    self.set_status(format!("notebook '{name}' created without a git remote"));
+                    self.set_status("new notebook cancelled".into());
+                } else if looks_like_git_url(&value) {
+                    match self.create_notebook_from_url(&value) {
+                        Ok(status) => self.set_status(status),
+                        Err(e) => {
+                            self.set_status(e.clone());
+                            self.reopen_input_with_error(PendingInput::NewNotebookRemote, value, e);
+                        }
+                    }
+                } else if looks_like_path(&value) {
+                    self.adopt_notebook_from_path(&value);
+                } else {
+                    let e = format!("'{value}' doesn't look like a git URL or a local path");
+                    self.set_status(e.clone());
+                    self.reopen_input_with_error(PendingInput::NewNotebookRemote, value, e);
+                }
+            }
+            Some(source_kind @ PendingInput::NewNotebookGitHubRepo)
+            | Some(source_kind @ PendingInput::NewNotebookGitLabRepo) => {
+                if value.is_empty() {
+                    self.set_status("new notebook cancelled".into());
                     return;
                 }
-                match self.store.get(&name) {
-                    Ok(nb) => match shiki_core::git::set_remote(&nb.path, &value) {
-                        Ok(()) => {
-                            let redacted = shiki_core::git::redact_credentials(&value);
-                            self.set_status(format!(
-                                "notebook '{name}' created, remote set to '{redacted}'"
-                            ));
-                        }
-                        Err(e) => self.set_status(format!(
-                            "notebook '{name}' created, but could not set remote: {e}"
-                        )),
-                    },
-                    Err(e) => self.set_status(format!(
-                        "notebook '{name}' vanished right after creation: {e}"
-                    )),
+                let host = if source_kind == PendingInput::NewNotebookGitHubRepo {
+                    "github.com"
+                } else {
+                    "gitlab.com"
+                };
+                let Some(url) = remote_url_from_owner_repo(host, &value) else {
+                    let e = format!("'{value}' doesn't look like owner/repo");
+                    self.set_status(e.clone());
+                    self.reopen_input_with_error(source_kind, value, e);
+                    return;
+                };
+                if source_kind == PendingInput::NewNotebookGitHubRepo {
+                    self.spawn_github_preflight(value.clone());
+                }
+                match self.create_notebook_from_url(&url) {
+                    Ok(status) => self.set_status(status),
+                    Err(e) => {
+                        self.set_status(e.clone());
+                        self.reopen_input_with_error(source_kind, value, e);
+                    }
+                }
+            }
+            Some(PendingInput::NewNotebookSshRemote) => {
+                if value.is_empty() {
+                    self.set_status("new notebook cancelled".into());
+                    return;
+                }
+                let url = normalize_ssh_remote(&value);
+                match self.create_notebook_from_url(&url) {
+                    Ok(status) => self.set_status(status),
+                    Err(e) => {
+                        self.set_status(e.clone());
+                        self.reopen_input_with_error(PendingInput::NewNotebookSshRemote, value, e);
+                    }
                 }
             }
             Some(PendingInput::RenameNote) => {
@@ -5370,7 +5783,7 @@ impl App {
                 }
             }
             Some(PendingInput::SettingsGeneralText) => {
-                self.show_settings = true;
+                self.show_settings = self.settings_reopen_after_prompt;
                 // EDITOR's one text field (`spellcheck_lang`) rides the same
                 // prompt as GENERAL's text rows — but the selection index
                 // points at the EDITOR tab, so it's resolved here by
@@ -5384,9 +5797,9 @@ impl App {
                         self.save_config();
                         self.set_status(format!("spellcheck_lang -> '{value}'"));
                     }
-                } else {
+                } else if let Some(real) = crate::panel_settings::selected_real_index(self) {
                     use crate::panel_settings::GeneralField;
-                    let field = GeneralField::ALL[self.settings_selected];
+                    let field = GeneralField::ALL[real];
                     // default_note_sort is free text ("filename"/"title"/"date",
                     // tolerantly parsed — see NoteSort::from_config_str), so an
                     // empty value here isn't "cancelled" the way it is for
@@ -5488,69 +5901,85 @@ impl App {
                             GeneralField::WikilinkAutocomplete => "wikilink_autocomplete",
                             GeneralField::DailyAgenda => "daily_agenda",
                             GeneralField::CompactFooter => "compact_footer",
+                            GeneralField::ShowBorders => "show_borders",
                             GeneralField::TasksShowDoneDefault => "tasks_show_done_default",
                             GeneralField::PreviewImages => "preview_images",
+                            GeneralField::AutoPullOnSwitch => "auto_pull_on_switch",
                         })
                     };
                     if let Some(label) = label {
                         self.save_config();
                         self.set_status(format!("{label} -> '{value}'"));
                     }
+                } else {
+                    // The `/` filter changed (or matched nothing) between
+                    // opening this prompt and confirming it — shouldn't
+                    // normally happen (Settings itself isn't interactable
+                    // while the prompt is open), but resolving to the wrong
+                    // field would be worse than just reporting it.
+                    self.set_status("unchanged (selection changed)".into());
                 }
             }
             Some(PendingInput::SettingsGitText) => {
                 use crate::panel_settings::GitField;
-                self.show_settings = true;
-                match GitField::ALL[self.settings_selected] {
-                    GitField::AutoSyncEvery => match value.parse::<u32>() {
-                        Ok(n) => {
-                            self.config.git.auto_sync_every = n;
+                self.show_settings = self.settings_reopen_after_prompt;
+                if let Some(real) = crate::panel_settings::selected_real_index(self) {
+                    match GitField::ALL[real] {
+                        GitField::AutoSyncEvery => match value.parse::<u32>() {
+                            Ok(n) => {
+                                self.config.git.auto_sync_every = n;
+                                self.save_config();
+                                self.set_status(format!("auto_sync_every -> {n}"));
+                            }
+                            Err(_) => self.set_status(format!("'{value}' isn't a whole number")),
+                        },
+                        // Empty is a meaningful value here ("no template"), so —
+                        // unlike every other text field — it's not treated as
+                        // "cancelled".
+                        GitField::RemoteTemplate => {
+                            self.config.git.remote_template = value.clone();
                             self.save_config();
-                            self.set_status(format!("auto_sync_every -> {n}"));
+                            self.set_status(format!("remote_template -> '{value}'"));
                         }
-                        Err(_) => self.set_status(format!("'{value}' isn't a whole number")),
-                    },
-                    // Empty is a meaningful value here ("no template"), so —
-                    // unlike every other text field — it's not treated as
-                    // "cancelled".
-                    GitField::RemoteTemplate => {
-                        self.config.git.remote_template = value.clone();
-                        self.save_config();
-                        self.set_status(format!("remote_template -> '{value}'"));
-                    }
-                    field @ (GitField::CommitPrefix | GitField::Remote | GitField::Branch) => {
-                        if value.is_empty() {
-                            self.set_status("unchanged (empty)".into());
-                        } else {
-                            let label = match field {
-                                GitField::CommitPrefix => {
-                                    self.config.git.commit_prefix = value.clone();
-                                    "commit_prefix"
-                                }
-                                GitField::Remote => {
-                                    self.config.git.remote = value.clone();
-                                    "remote"
-                                }
-                                GitField::Branch => {
-                                    self.config.git.branch = value.clone();
-                                    "branch"
-                                }
-                                _ => unreachable!(),
-                            };
-                            self.save_config();
-                            self.set_status(format!("{label} -> '{value}'"));
+                        field @ (GitField::CommitPrefix | GitField::Remote | GitField::Branch) => {
+                            if value.is_empty() {
+                                self.set_status("unchanged (empty)".into());
+                            } else {
+                                let label = match field {
+                                    GitField::CommitPrefix => {
+                                        self.config.git.commit_prefix = value.clone();
+                                        "commit_prefix"
+                                    }
+                                    GitField::Remote => {
+                                        self.config.git.remote = value.clone();
+                                        "remote"
+                                    }
+                                    GitField::Branch => {
+                                        self.config.git.branch = value.clone();
+                                        "branch"
+                                    }
+                                    _ => unreachable!(),
+                                };
+                                self.save_config();
+                                self.set_status(format!("{label} -> '{value}'"));
+                            }
                         }
+                        GitField::AutoCommit
+                        | GitField::AutoPush
+                        | GitField::SignCommits
+                        | GitField::AutoSync => {}
                     }
-                    GitField::AutoCommit
-                    | GitField::AutoPush
-                    | GitField::SignCommits
-                    | GitField::AutoSync => {}
+                } else {
+                    // Same defensive fallback as `SettingsGeneralText` above —
+                    // shouldn't normally happen, since Settings itself isn't
+                    // interactable while this prompt is open.
+                    self.set_status("unchanged (selection changed)".into());
                 }
             }
             Some(PendingInput::SettingsExportText) => {
                 // Empty is meaningful here too ("use the default location"),
                 // same as GitField::RemoteTemplate above — not "cancelled".
-                self.show_settings = true;
+                self.show_settings = self.settings_reopen_after_prompt;
                 self.config.export.export_dir = value.clone();
                 self.save_config();
                 self.set_status(format!("export_dir -> '{value}'"));
@@ -5614,6 +6043,7 @@ impl App {
         // instant it opened.
         if self.pending_input.is_none() {
             self.pending_input_title = None;
+            self.pending_input_error = None;
             self.mode = Mode::Normal;
         }
     }
@@ -5720,6 +6150,8 @@ impl App {
                     self.finish_merge_notebook(&notebook);
                 } else if let Some(notebook) = self.pending_abort_merge.take() {
                     self.abort_merge_notebook(&notebook);
+                } else if let Some(source) = self.pending_apply_theme_all.take() {
+                    self.apply_theme_to_all_notebooks(&source);
                 }
             }
             // The rename flow's third answer: rename, but leave every
@@ -5742,6 +6174,7 @@ impl App {
                 self.pending_rename_links = None;
                 self.pending_finish_merge = None;
                 self.pending_abort_merge = None;
+                self.pending_apply_theme_all = None;
             }
         }
         self.confirm = None;
@@ -5960,34 +6393,40 @@ impl App {
             KeyCode::Esc => {
                 let kind = self.pending_input.take();
                 self.pending_input_title = None;
+                self.pending_input_error = None;
                 self.pending_batch = None;
                 if kind == Some(PendingInput::NewNote) {
                     self.pending_new_note_body = None;
                 }
-                // Abandoning the follow-up remote prompt just means "not
-                // now" for that notebook — clear the staged name so a later
-                // unrelated flow can't trip over it.
-                if kind == Some(PendingInput::NewNotebookRemote) {
-                    self.pending_new_notebook_remote = None;
-                }
                 self.mode = Mode::Normal;
-                // Every `Settings*` prompt is only ever started from inside
-                // the Settings modal, which hides it first since a modal
-                // underneath an `Insert`-mode prompt would otherwise still
-                // intercept the keystrokes (`on_key` checks `show_settings`
-                // before `self.mode`) — cancelling must reopen it, same as
-                // confirming does.
+                // These `Settings*` prompts are only ever started from
+                // inside the Settings modal, which hides it first since a
+                // modal underneath an `Insert`-mode prompt would otherwise
+                // still intercept the keystrokes (`on_key` checks
+                // `show_settings` before `self.mode`) — cancelling must
+                // reopen it, same as confirming does.
                 if matches!(
                     kind,
                     Some(PendingInput::SettingsNotebookRemote)
                         | Some(PendingInput::SettingsNotebookAutoSyncEvery)
-                        | Some(PendingInput::SettingsGeneralText)
-                        | Some(PendingInput::SettingsGitText)
-                        | Some(PendingInput::SettingsExportText)
                         | Some(PendingInput::SettingsSnippetTrigger)
                         | Some(PendingInput::SettingsSnippetLabel)
                 ) {
                     self.show_settings = true;
+                }
+                // `SettingsGeneralText`/`SettingsGitText`/`SettingsExportText`
+                // can *also* be opened directly from which-key's config-field
+                // rows (`App::activate_config_field`), which never had
+                // Settings open to begin with — reopening it unconditionally
+                // here would pop Settings up out of nowhere on cancel. Same
+                // `settings_reopen_after_prompt` flag `confirm_input` checks.
+                if matches!(
+                    kind,
+                    Some(PendingInput::SettingsGeneralText)
+                        | Some(PendingInput::SettingsGitText)
+                        | Some(PendingInput::SettingsExportText)
+                ) {
+                    self.show_settings = self.settings_reopen_after_prompt;
                 }
                 // `NotebookPassphrase` is reachable from two different
                 // places (an auto-unlock prompt when switching into a
@@ -7749,6 +8188,22 @@ impl App {
         }
     }
     pub fn on_key(&mut self, key: KeyEvent) {
+        // Cancels an in-flight background git op (manual s/u/p/P, an
+        // auto-pull-on-switch, or a new-notebook clone) — checked before
+        // every modal/mode dispatch below so it works no matter what else
+        // is open, since a slow sync can legitimately be running while
+        // you're doing something completely unrelated. `Ctrl+C` isn't bound
+        // to anything else in this app (crossterm's raw mode delivers it as
+        // a plain key event, not SIGINT), so this never shadows an existing
+        // binding; a no-op when nothing's running falls straight through to
+        // normal handling.
+        if key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && self.sync_in_flight.is_some()
+        {
+            self.cancel_sync();
+            return;
+        }
         // Checked first, ahead of every other modal: a revert confirmation
         // can be opened *from inside* the history modal (confirm-over-modal),
         // and confirm must intercept `y`/`n` in that case rather than the
@@ -7771,6 +8226,10 @@ impl App {
         }
         if self.show_template_picker {
             self.handle_template_picker_key(key);
+            return;
+        }
+        if self.show_notebook_source_picker {
+            self.handle_notebook_source_picker_key(key);
             return;
         }
         if self.show_global_search {

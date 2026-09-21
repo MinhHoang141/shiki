@@ -224,7 +224,7 @@ search, tree view) using the same list/selection they already navigate with `j`/
 
 | Key | Action |
 |---|---|
-| `a` | New notebook. A git URL (`https://`, `git@host:...`, `ssh://`, `git://`) derives the notebook name from the repo instead, creates it, sets its remote, and pulls immediately — importing an existing repo is just `a` + paste URL + Enter. A filesystem path (`/abs/path`, `~/docs`, `./relative`) adopts that existing directory as a notebook instead of creating an empty one — name derived from the last path segment; asks to `git init` first if it isn't already a repo |
+| `a` | New notebook — opens a "where from?" menu first: Local / GitHub / GitLab / Generic Git URL / SSH. **Local** asks for a name, same as before (a pasted git URL/path there still works too, as a fallback). **GitHub**/**GitLab** only ask for `owner/repo` — shiki builds the full URL, derives the notebook's name from the repo, sets the remote, and pulls immediately, no separate name question. **Generic Git URL** takes a full URL (`https://`, `git@host:...`, `ssh://`, `git://`) or a local path (`/abs/path`, `~/docs`, `./relative`, adopted as-is — name from the last path segment, asks to `git init` first if it isn't already a repo). **SSH** takes `host:path` or `user@host:path` (`git@` assumed if no user given), warning (non-blocking) if no SSH key/agent is detected. A failed attempt on any of these reopens the same prompt prefilled with what was typed instead of losing it |
 | `r` | Rename notebook |
 | `d` | Delete notebook (with confirmation) |
 | `s` | Git sync — commit (message auto-built from the diff, naming files directly for a small change, e.g. "shiki: added (First note.md)"), + push if the resolved policy's `auto_push` is on |
@@ -232,6 +232,14 @@ search, tree view) using the same list/selection they already navigate with `j`/
 | `p` | Git pull (fetch + fast-forward merge from the configured remote) |
 | `P` | Git pull for every notebook that has a remote configured |
 | `R` | Set the notebook's git remote (URL or local path) |
+| `Ctrl+C` | Cancel whatever git operation (`s`/`u`/`p`/`P`, an auto-pull, or a new-notebook clone) is currently showing in the footer spinner — only intercepted while one is actually running |
+
+The footer spinner shown while any of these run in the background also displays elapsed seconds
+(`⠙ syncing 'notebook' (34s)…`), so a large clone/pull reads as "still working" instead of
+looking indistinguishable from a hang. `Ctrl+C` doesn't force-kill the underlying network call —
+that can't be done safely mid-flight — it just stops waiting for it and frees the "only one op at a
+time" slot immediately; the abandoned attempt may still finish quietly on disk, with its result
+simply discarded.
 
 Beyond manual `s`, a notebook can sync **itself** in the background: `[git] auto_sync = true` (off by
 default) syncs automatically every `auto_sync_every` note changes (new/edited/renamed/deleted/moved),
@@ -241,6 +249,12 @@ you always want pushed vs. a scratch notebook with no remote at all — `auto_pu
 falling back to the global `[git]` values for anything left unset. A failed push (no internet, auth,
 etc.) never blocks or loses anything — the commit already happened locally either way, and the next
 sync attempt (manual or automatic) just tries the push again.
+
+The other direction — pulling — can also happen automatically: `[general] auto_pull_on_switch =
+true` (off by default) pulls a notebook the first time it's selected each session, provided it has
+a remote configured. Silent when there's nothing to do (no remote, already pulled this session,
+something else already syncing) — only a real pull attempt shows up in the footer, same as manual
+`p`.
 
 #### Merge conflicts (the resolver modal)
 
@@ -908,6 +922,11 @@ daily_agenda = true
 # Hides char/word count, reading time, and note-count detail from the
 # footer, leaving just the essentials — notebook, git status, editor mode.
 compact_footer = false
+# When true (default), every panel/popup draws its themed border. Off
+# switches every one of them to no border at all — titles still show, since
+# a panel's title reserves its own row independent of whether a border is
+# actually drawn.
+show_borders = true
 # How long a footer status message stays visible before clearing itself.
 status_message_timeout_secs = 2
 # Width in columns of the notebook drawer (leader+`b`). Clamped against
@@ -942,6 +961,11 @@ preview_image_scale = 0.5
 # Notebook-root folder pasted images (Ctrl+V with an image on the
 # clipboard) are saved into; the inserted link resolves from any note depth.
 attachments_dir = "attachments"
+# When true, switching to a notebook that has a remote configured triggers
+# a background pull automatically (same spinner as manual `p`), once per
+# notebook per session. Off by default: this puts a network call behind
+# plain navigation, which otherwise never touches the network at all.
+auto_pull_on_switch = false
 
 [keybindings]
 leader = "space"
@@ -1014,11 +1038,6 @@ metadata = "M"
 [theme]
 name = "gruvbox-dark"
 icons = true  # false falls back to plain text — no Nerd Font glyphs anywhere
-# Per-notebook theme overrides: a notebook name here wins over `name` while
-# that notebook is focused (the TUI re-resolves on notebook switch; the
-# theme picker writes here when a notebook is selected, and the CLI sets it
-# with `shiki theme set <theme> --notebook <name>`):
-# notebooks = { personal = "LoL (Jinx)", work = "Cyberpunk 2077" }
 # Every one of a theme's 19 color slots can be overridden individually —
 # accent, bg, fg, selection, border, statusbar, highlight, error, warning,
 # success, inactive, scrollbar, tab_active, tab_inactive, panel_title,
@@ -1033,6 +1052,11 @@ icons = true  # false falls back to plain text — no Nerd Font glyphs anywhere
 # copied from a real palette (defaulting to whichever theme is active) —
 # a starting point to edit slot-by-slot instead of hand-typing hex codes
 # from scratch with no example to copy from.
+#
+# Per-notebook theme customization — base theme, all 19 colors, and icons —
+# lives under `[notebooks.<name>]` instead (see below), not here: every
+# notebook can be fully, independently themed, not just given a different
+# base palette name.
 
 [git]
 auto_commit = true
@@ -1106,6 +1130,22 @@ auto_sync = true
 auto_sync = true
 auto_sync_every = 3
 auto_push = true
+# Full per-notebook theme customization — a base theme name, individual
+# color-slot overrides (any of the same 19 slots `[theme]` above supports),
+# and its own icons toggle, all independent of the global theme and of every
+# other notebook. Set via the theme picker (leader+`c`, while this notebook
+# is selected), `shiki theme set <theme> --notebook work`, or
+# `shiki theme create --from <theme> --notebook work` (scaffolds all 19
+# color keys at once, same as the global version). Settings → NOTEBOOKS →
+# work → `icons` cycles the icons override in place; unset falls back to
+# the global `[theme] icons`. Settings → NOTEBOOKS → work also has an
+# "apply to all" action (`A`) that clones this notebook's fully-resolved
+# theme — base name, colors, and icons — onto every other notebook at once,
+# for "maximum customization, everywhere" in one shot.
+theme_name = "nord"
+theme_icons = true
+# accent = "#88c0d0"
+# bg = "#2e3440"
 # Encrypts every note at rest with a passphrase (prompted, never stored here
 # or anywhere else — see "Encryption at rest" above). No global default to
 # inherit from; this is opt-in per notebook, managed via `shiki notebook

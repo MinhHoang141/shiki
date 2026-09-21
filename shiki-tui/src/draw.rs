@@ -1,6 +1,6 @@
 use crate::app::{
     centered_rect, drawer_area, global_search_layout, global_search_popup_area, relative_folder,
-    App, Mode, PendingInput, UpdateState,
+    App, Mode, NotebookSourceKind, PendingInput, UpdateState,
 };
 use crate::icons;
 use crate::render::{hex_to_color, panel_block};
@@ -16,7 +16,10 @@ use ratatui::widgets::{Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
 pub fn draw(frame: &mut Frame, app: &App) {
-    icons::set_enabled(app.config.theme.icons);
+    icons::set_enabled(
+        app.config
+            .icons_for(app.selected_notebook().map(|nb| nb.name.as_str())),
+    );
     let background = ratatui::widgets::Block::default()
         .style(ratatui::style::Style::default().bg(hex_to_color(&app.theme.bg)));
     frame.render_widget(background, frame.area());
@@ -105,7 +108,12 @@ pub fn draw(frame: &mut Frame, app: &App) {
             let highlight_symbol = format!("{}", icons::ARROW);
             let list_title = format!(" {}Quick template ", icons::CALENDAR);
             let list = List::new(items)
-                .block(panel_block(Line::from(list_title), true, &app.theme))
+                .block(panel_block(
+                    Line::from(list_title),
+                    true,
+                    &app.theme,
+                    app.config.general.show_borders,
+                ))
                 .highlight_style(
                     Style::default()
                         .bg(app.selection_bg())
@@ -148,7 +156,12 @@ pub fn draw(frame: &mut Frame, app: &App) {
                 format!(" {}Suggestions ", icons::TAG)
             };
             let list = List::new(items)
-                .block(panel_block(Line::from(list_title), true, &app.theme))
+                .block(panel_block(
+                    Line::from(list_title),
+                    true,
+                    &app.theme,
+                    app.config.general.show_borders,
+                ))
                 .highlight_style(
                     Style::default()
                         .bg(app.selection_bg())
@@ -161,35 +174,39 @@ pub fn draw(frame: &mut Frame, app: &App) {
                 state.select(Some(app.metadata_value_selected.min(filtered.len() - 1)));
             }
             frame.render_stateful_widget(list, list_area, &mut state);
+        } else if let Some(error) = app.pending_input_error.as_deref() {
+            // A synchronous failure (bad input shape, name collision, etc.)
+            // that reopened this same prompt for a retry — shown in place of
+            // the normal hint, in the theme's error color, so the reason is
+            // visible right where the user is already looking instead of
+            // only in the footer (which can be truncated, or just not where
+            // attention is once they've retyped something). Deliberately
+            // not gated by `show_hints`: this is a fact about what just
+            // happened, not an optional tip.
+            render_input_with_message(
+                frame,
+                app,
+                title,
+                width,
+                error,
+                Style::default()
+                    .fg(hex_to_color(&app.theme.error))
+                    .add_modifier(Modifier::BOLD),
+            );
         } else if let Some(hint) = kind.hint().filter(|_| app.config.general.show_hints) {
             // Stacked under the input box's own fixed 3 rows, same idea as
             // the quick-template dropdown above — the hint is informational
             // only, so it never affects input handling, just what's drawn.
-            let hint_height = hint_line_count(hint, width.saturating_sub(2));
-            let popup_area = centered_rect(frame.area(), width, 3 + 1 + hint_height);
-            frame.render_widget(Clear, popup_area);
-            let [input_area, _spacer, hint_area] = Layout::vertical([
-                Constraint::Length(3),
-                Constraint::Length(1),
-                Constraint::Length(hint_height),
-            ])
-            .areas(popup_area);
-            app.input.render(
+            render_input_with_message(
                 frame,
-                input_area,
+                app,
                 title,
-                hex_to_color(&app.theme.accent),
-                hex_to_color(&app.theme.bg),
+                width,
+                hint,
+                Style::default()
+                    .fg(hex_to_color(&app.theme.muted))
+                    .add_modifier(Modifier::ITALIC),
             );
-            let hint_paragraph = Paragraph::new(hint)
-                .style(
-                    Style::default()
-                        .fg(hex_to_color(&app.theme.muted))
-                        .add_modifier(Modifier::ITALIC),
-                )
-                .alignment(ratatui::layout::Alignment::Center)
-                .wrap(Wrap { trim: true });
-            frame.render_widget(hint_paragraph, hint_area);
         } else {
             let popup_area = centered_rect(frame.area(), width, 3);
             frame.render_widget(Clear, popup_area);
@@ -293,6 +310,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
         render_template_picker(frame, frame.area(), app);
     }
 
+    if app.show_notebook_source_picker {
+        render_notebook_source_picker(frame, frame.area(), app);
+    }
+
     if app.show_global_search {
         render_global_search(frame, frame.area(), app);
     }
@@ -350,6 +371,40 @@ pub fn draw(frame: &mut Frame, app: &App) {
         frame.render_widget(Clear, popup_area);
         dialog.render(frame, popup_area, hex_to_color(&app.theme.warning));
     }
+}
+
+/// The input box plus one centered, wrapped message line stacked under it
+/// (a spacer row in between) — shared by the normal muted hint and the
+/// `pending_input_error` override, which differ only in text/style.
+fn render_input_with_message(
+    frame: &mut Frame,
+    app: &App,
+    title: &str,
+    width: u16,
+    message: &str,
+    style: Style,
+) {
+    let message_height = hint_line_count(message, width.saturating_sub(2));
+    let popup_area = centered_rect(frame.area(), width, 3 + 1 + message_height);
+    frame.render_widget(Clear, popup_area);
+    let [input_area, _spacer, message_area] = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(1),
+        Constraint::Length(message_height),
+    ])
+    .areas(popup_area);
+    app.input.render(
+        frame,
+        input_area,
+        title,
+        hex_to_color(&app.theme.accent),
+        hex_to_color(&app.theme.bg),
+    );
+    let paragraph = Paragraph::new(message)
+        .style(style)
+        .alignment(ratatui::layout::Alignment::Center)
+        .wrap(Wrap { trim: true });
+    frame.render_widget(paragraph, message_area);
 }
 
 /// Greedy word-wrap line count for a `PendingInput` hint, so the popup can
@@ -432,7 +487,12 @@ fn render_theme_picker(frame: &mut Frame, frame_area: Rect, app: &App) {
         app.available_themes.len()
     );
     let list = List::new(items)
-        .block(panel_block(Line::from(title), true, &app.theme))
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ))
         .highlight_style(
             Style::default()
                 .bg(app.selection_bg())
@@ -465,7 +525,12 @@ fn render_template_picker(frame: &mut Frame, frame_area: Rect, app: &App) {
     let highlight_symbol = format!("{}", icons::ARROW);
     let title = format!(" {}Pick a template ", icons::NOTE);
     let list = List::new(items)
-        .block(panel_block(Line::from(title), true, &app.theme))
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ))
         .highlight_style(
             Style::default()
                 .bg(app.selection_bg())
@@ -476,6 +541,49 @@ fn render_template_picker(frame: &mut Frame, frame_area: Rect, app: &App) {
 
     let mut state = ListState::default();
     state.select(Some(app.template_picker_index));
+    frame.render_stateful_widget(list, popup_area, &mut state);
+}
+
+/// The new-notebook wizard's source-kind menu — same shape as
+/// `render_template_picker`, just over `NotebookSourceKind::ALL`'s fixed 5
+/// rows instead of a dynamically built option list, each row pairing its
+/// label with a muted one-line description.
+fn render_notebook_source_picker(frame: &mut Frame, frame_area: Rect, app: &App) {
+    let height =
+        (NotebookSourceKind::ALL.len() as u16 + 2).min(frame_area.height.saturating_sub(2));
+    let popup_area = centered_rect(frame_area, 50, height);
+    frame.render_widget(Clear, popup_area);
+
+    let muted = hex_to_color(&app.theme.muted);
+    let fg = hex_to_color(&app.theme.fg);
+    let items: Vec<ListItem> = NotebookSourceKind::ALL
+        .iter()
+        .map(|kind| {
+            ListItem::new(Line::from(vec![
+                Span::styled(format!("{:<20}", kind.label()), Style::default().fg(fg)),
+                Span::styled(kind.description(), Style::default().fg(muted)),
+            ]))
+        })
+        .collect();
+    let highlight_symbol = format!("{}", icons::ARROW);
+    let title = format!(" {}Connect to a remote? ", icons::NOTEBOOK);
+    let list = List::new(items)
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ))
+        .highlight_style(
+            Style::default()
+                .bg(app.selection_bg())
+                .fg(app.selection_fg())
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol(highlight_symbol.as_str());
+
+    let mut state = ListState::default();
+    state.select(Some(app.notebook_source_index));
     frame.render_stateful_widget(list, popup_area, &mut state);
 }
 
@@ -519,7 +627,12 @@ fn render_global_search(frame: &mut Frame, frame_area: Rect, app: &App) {
     let count = app.global_search_results.len();
     let title = format!(" Results [{count}] ");
     let list = List::new(items)
-        .block(panel_block(Line::from(title), true, &app.theme))
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ))
         .highlight_style(
             Style::default()
                 .bg(app.selection_bg())
@@ -600,7 +713,12 @@ fn render_update(frame: &mut Frame, frame_area: Rect, app: &App) {
 
     let paragraph = ratatui::widgets::Paragraph::new(body)
         .wrap(ratatui::widgets::Wrap { trim: false })
-        .block(panel_block(Line::from(title), true, &app.theme));
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ));
     frame.render_widget(paragraph, popup_area);
 }
 
@@ -627,7 +745,12 @@ fn render_logs(frame: &mut Frame, frame_area: Rect, app: &App) {
         app.log_history.len()
     );
     let list = List::new(items)
-        .block(panel_block(Line::from(title), true, &app.theme))
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ))
         .highlight_style(
             Style::default()
                 .bg(app.selection_bg())
@@ -678,7 +801,12 @@ fn render_tree(frame: &mut Frame, frame_area: Rect, app: &App) {
         app.tree_note_count()
     );
     let list = List::new(items)
-        .block(panel_block(Line::from(title), true, &app.theme))
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ))
         .highlight_style(
             Style::default()
                 .bg(app.selection_bg())
@@ -744,7 +872,12 @@ fn render_links(frame: &mut Frame, frame_area: Rect, app: &App) {
         icons::LINK
     );
     let list = List::new(items)
-        .block(panel_block(Line::from(title), true, &app.theme))
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ))
         .highlight_style(
             Style::default()
                 .bg(app.selection_bg())
@@ -797,7 +930,12 @@ fn render_working_diff(
         })
         .collect();
     let paragraph = ratatui::widgets::Paragraph::new(diff_lines)
-        .block(panel_block(Line::from(title), true, &app.theme))
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ))
         .wrap(ratatui::widgets::Wrap { trim: false });
     frame.render_widget(paragraph, popup_area);
 }
@@ -830,7 +968,12 @@ fn render_history(frame: &mut Frame, frame_area: Rect, app: &App) {
             })
             .collect();
         let paragraph = ratatui::widgets::Paragraph::new(diff_lines)
-            .block(panel_block(Line::from(title), true, &app.theme))
+            .block(panel_block(
+                Line::from(title),
+                true,
+                &app.theme,
+                app.config.general.show_borders,
+            ))
             .wrap(ratatui::widgets::Wrap { trim: false });
         frame.render_widget(paragraph, popup_area);
         return;
@@ -843,7 +986,12 @@ fn render_history(frame: &mut Frame, frame_area: Rect, app: &App) {
             icons::HISTORY
         );
         let paragraph = ratatui::widgets::Paragraph::new(content.as_str())
-            .block(panel_block(Line::from(title), true, &app.theme))
+            .block(panel_block(
+                Line::from(title),
+                true,
+                &app.theme,
+                app.config.general.show_borders,
+            ))
             .wrap(ratatui::widgets::Wrap { trim: false });
         frame.render_widget(paragraph, popup_area);
         return;
@@ -871,7 +1019,12 @@ fn render_history(frame: &mut Frame, frame_area: Rect, app: &App) {
         app.history_entries.len()
     );
     let list = List::new(items)
-        .block(panel_block(Line::from(title), true, &app.theme))
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ))
         .highlight_style(
             Style::default()
                 .bg(app.selection_bg())
@@ -921,11 +1074,21 @@ fn render_conflicts(frame: &mut Frame, frame_area: Rect, app: &App) {
         let ours_title = format!(" {}OURS  \u{2014}  {hint} ", icons::GIT);
         let theirs_title = format!(" {}THEIRS  \u{2014}  {hint} ", icons::GIT);
         let ours_paragraph = ratatui::widgets::Paragraph::new(to_lines(&view.ours))
-            .block(panel_block(Line::from(ours_title), true, &app.theme))
+            .block(panel_block(
+                Line::from(ours_title),
+                true,
+                &app.theme,
+                app.config.general.show_borders,
+            ))
             .scroll((view.scroll, 0))
             .wrap(ratatui::widgets::Wrap { trim: false });
         let theirs_paragraph = ratatui::widgets::Paragraph::new(to_lines(&view.theirs))
-            .block(panel_block(Line::from(theirs_title), true, &app.theme))
+            .block(panel_block(
+                Line::from(theirs_title),
+                true,
+                &app.theme,
+                app.config.general.show_borders,
+            ))
             .scroll((view.scroll, 0))
             .wrap(ratatui::widgets::Wrap { trim: false });
         frame.render_widget(ours_paragraph, ours_area);
@@ -947,7 +1110,12 @@ fn render_conflicts(frame: &mut Frame, frame_area: Rect, app: &App) {
         if app.conflict_files.len() == 1 { "" } else { "s" }
     );
     let list = List::new(items)
-        .block(panel_block(Line::from(title), true, &app.theme))
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ))
         .highlight_style(
             Style::default()
                 .bg(app.selection_bg())
@@ -1006,7 +1174,12 @@ fn render_slash_menu(
     let highlight_symbol = format!("{}", icons::ARROW);
     let title = format!(" {}Slash menu ", icons::PENCIL);
     let list = List::new(items)
-        .block(panel_block(Line::from(title), true, &app.theme))
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ))
         .highlight_style(
             Style::default()
                 .bg(app.selection_bg())
@@ -1087,7 +1260,12 @@ fn render_wikilink_menu(
     let highlight_symbol = format!("{}", icons::ARROW);
     let title = format!(" {}Link to note ", icons::LINK);
     let list = List::new(items)
-        .block(panel_block(Line::from(title), true, &app.theme))
+        .block(panel_block(
+            Line::from(title),
+            true,
+            &app.theme,
+            app.config.general.show_borders,
+        ))
         .highlight_style(
             Style::default()
                 .bg(app.selection_bg())

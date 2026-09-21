@@ -16,9 +16,12 @@ behavior (layout, CLI commands, config schema, etc).
 ```sh
 cargo build --workspace              # build everything
 cargo check --workspace              # fast type-check (use this while iterating)
-cargo clippy --workspace --all-targets   # lint; keep this clean before considering work done
+cargo clippy --workspace --all-targets -- -D warnings   # lint; CI enforces -D warnings, so match it locally
 cargo fmt --all                      # format (run after editing, before checking clippy)
 cargo run -p shiki-cli -- <args>     # run the binary, e.g. `-- new "titulo"`, `-- daily`, no args launches the TUI
+cargo test -p shiki-tui panel_drawer::tests   # single module, e.g. while iterating on one file
+cargo test -p shiki-tui clicking_the_button_row   # single test by (substring of) name
+cargo audit                          # CI runs this too; ignore list is .cargo/audit.toml
 ```
 
 There are 398 `#[test]`s: 180 in `shiki-core`, 20 in `shiki-config`, 176 in `shiki-tui`, 16 in
@@ -373,7 +376,7 @@ at AI assistants/crawlers that check for it directly, the same way search engine
 
 ## Architecture
 
-Cargo workspace. The four terminal crates form a strict one-way dependency chain:
+Cargo workspace, six members. The four terminal crates form a strict one-way dependency chain:
 
 ```
 shiki-core   (pure domain logic, no TUI, no config crate dependency)
@@ -381,6 +384,17 @@ shiki-config (TOML config + themes, no ratatui dependency)
 shiki-tui    (ratatui UI, depends on shiki-core + shiki-config)
 shiki-cli    (clap entrypoint, depends on all three; binary name is `shiki`)
 ```
+
+Two more members sit outside that chain — both depend on `shiki-core`/`shiki-config` but not on
+`shiki-tui`/`shiki-cli`, and neither of the terminal crates depends on them:
+
+- **`shiki-native-host`** — a native-messaging host binary bridging the Chrome/Firefox browser
+  extension to the TUI's capture daemon (same TCP transport `shiki capture`/`shiki daemon` use;
+  see the capture-daemon section below).
+- **`shiki-desktop`** — a Tauri 2 + Svelte desktop GUI (`shiki-desktop/ui/`, a separate Vite/npm
+  frontend) wrapping the same note/notebook/git core. It's the only workspace member that pulls in
+  `tokio`/async at all — the terminal crates stay synchronous (`std::thread` + `mpsc`) throughout,
+  don't introduce async there for a new feature.
 
 **shiki-config is deliberately decoupled from ratatui.** `Theme` (`shiki-config/src/theme.rs`)
 stores every color slot as a string — `#rrggbb` hex, a terminal-native ANSI name
@@ -920,6 +934,51 @@ not just the overrides: every slot is about to be explicitly overridden with `ba
 anyway, so leaving `theme.name` pointing at whatever was active before would make the command's
 own printed "removing a key falls back to `<base>`" guidance wrong the moment someone acts on it.
 
+**Per-notebook theme customization now covers everything a theme has — base name, all 19 color
+slots, and icons — not just the base theme name it started with.** `[notebooks.<name>]`
+(`NotebookGitOverride`, `shiki-config/src/config.rs` — already carrying non-git fields `path`/
+`hidden`/`encrypt`, hence the misleading name) gained `theme_name`/`theme_icons`/a flattened
+`theme_overrides: ThemeOverrides`, resolved through new `Config::theme_for`/`icons_for` methods
+rather than `ThemeConfig::resolve_for` directly — that one only ever knew about the global `name`/
+`overrides` plus the legacy `[theme.notebooks]` name-only map (kept only as a fallback read now;
+nothing writes there anymore). Every call site that used to do `config.theme.resolve_for(notebook)`
+switched to `config.theme_for(notebook)`. `icons::set_enabled` (`draw.rs`) now resolves
+`config.icons_for(selected_notebook)` fresh every single frame instead of the bare global
+`config.theme.icons`, so a per-notebook icons override needs no explicit cache refresh the way the
+cached `App.theme` does (`refresh_theme_for_selected_notebook`, called after anything that changes
+which notebook's colors are showing).
+
+The theme picker's `Enter` (`handlers/theme.rs`) writes the base name to `notebooks.<name>.
+theme_name` whenever a notebook is focused — since `App::selected_notebook()` is `Some` in
+virtually every real session, picking a theme from the TUI now almost always sets a per-notebook
+override, not the global default; the global `theme.name` is only reachable with no notebook
+selected at all, or by hand-editing config.toml / `shiki theme set <name>` with no `--notebook`.
+Resetting color overrides on a base-theme change was also fixed to reset the *right* scope while
+this was being built — the notebook's own `theme_overrides` when a notebook is focused, the global
+`[theme.overrides]` only when it isn't — the pre-existing code always wiped the global overrides
+regardless of scope, which would have blown away every notebook's shared colors the moment any
+single notebook's base theme changed.
+
+Settings → NOTEBOOKS → (notebook) gained `icons` (a 3-state unset/true/false cycle, same
+`cycle_notebook_bool_override` mechanism `auto_push`/`auto_sync` already use) and an informational
+`theme_overrides` row (mirrors THEME tab's own `overrides` row) pointing at `shiki theme create
+--from <name> --notebook <nb>` for editing the 19 colors — deliberately config.toml + CLI scaffold,
+not a 19-field interactive editor, same reasoning the *global* override already uses.
+`prune_empty_notebook_override` had to grow the same three new fields into its "is this override
+table now completely empty" check, or a notebook with only a theme customization (no git/hidden/
+encrypt override of its own) would get silently deleted the next time an unrelated field cycled
+back to "inherit".
+
+A new bulk action, "apply to all" (`A`, from that same drill-down, confirm-gated like every other
+bulk/irreversible Settings action), clones the focused notebook's fully-*resolved* theme — base
+name, all 19 colors, and icons, whichever it currently effectively shows, inherited or already
+customized — onto every *other* notebook's `[notebooks.<name>]` entry via
+`App::apply_theme_to_all_notebooks`. Resolving first, rather than copying whatever raw override
+fields happen to be set, is what makes it work uniformly whether the source notebook has nothing
+of its own configured (falls through to the global theme) or a fully hand-tuned palette — either
+way, `ThemeOverrides::from_theme` on the already-*resolved* `Theme` produces one complete,
+self-contained override for every target notebook.
+
 **The default theme on a fresh install is `gruvbox-dark`, not `catppuccin-mocha`** —
 `ThemeConfig::default()` (`shiki-config/src/config.rs`) is the single place this is set; the
 `[theme] name = "..."` example in `IDEA.md` was updated alongside it so the docs don't show a
@@ -1219,6 +1278,36 @@ user might type to search for "jump"/"key") — navigation is arrows + PageUp/Pa
 matching the convention global search already established for the same reason. Don't revert this to
 `on_key`'s blanket "any key closes it," and don't add `j`/`k` as navigation shortcuts here.
 
+**Which-key's palette now also surfaces config fields, not just bound actions/notes** —
+`WhichKeyRow::ConfigField { section, index, text }` (`keybindings.rs`), appended by
+`App::config_field_rows` only while the filter is non-empty (same "don't show hundreds of rows by
+default" reasoning `NoteHit` already follows), covering GENERAL/GIT/EDITOR/EXPORT fields plus
+THEME's `icons`. `section`/`index` are exactly the `(SettingsSection, usize)` pair
+`settings_section`/`settings_selected` already hold while browsing that field inside Settings
+itself, so `Enter` on a `ConfigField` row (`App::activate_config_field`) reuses
+`App::dispatch_settings_enter` verbatim instead of a second copy of every toggle/prompt case — the
+palette is a shortcut into the exact same code path Settings itself uses, not a parallel one.
+`App::settings_reopen_after_prompt` distinguishes a prompt opened *from inside* Settings (reopen it
+once the prompt resolves) from one opened directly via the palette (Settings was never open, so
+don't open it now either).
+
+**Settings itself gained a `/` filter at level 1 of each tab** (`App::settings_filter_active`/
+`settings_query`, toggled on by `/`, off by `Esc`) — `panel_settings::filtered_indices` returns
+real indices into `build(app)`'s row list whose label or value (case-insensitive substring)
+matches, and `settings_selected` indexes into *that* filtered list instead of `build`'s raw order
+the moment a query is non-empty, the same "selected index is a position in the filtered list"
+convention `outline_query`/`which_key_input` already established for their own modals. Deliberately
+level-1-only: a drilled-into notebook/snippet's own field list is already short enough that
+filtering wouldn't earn its keep.
+
+**`general.show_borders` (default `true`) makes every panel/popup's themed border optional** —
+`render::panel_block`/`panel_block_reading` take a `show_borders: bool` now (threaded through from
+`app.config.general.show_borders` at every call site), swapping `Borders::ALL` for `Borders::NONE`
+when off. The title still renders either way — a `Block`'s title reserves its own row independent
+of whether a border is actually drawn (verified against ratatui's own `Block::inner`) — so turning
+borders off still leaves every panel/popup legible, just without the box-drawing chars, useful on a
+cramped terminal or for anyone who prefers a borderless look.
+
 **Tree view (notes-scope `T`, `shiki-tui/src/tree.rs` + `App::open_tree`/`handle_tree_key`) is a
 read-only modal, not a persistent alternate mode for the Notes panel.** `tree::build(nb)` walks the
 whole notebook recursively (depth-first, folders — and everything under them — before the notes at
@@ -1252,6 +1341,93 @@ just-created notebook has no commits yet, so an immediate push would only fail w
 "reference not found" — the existing `auto_push`/`auto_sync` machinery picks the remote up
 naturally the first time there's actually something to sync. Empty string (the default) is a
 no-op, so existing configs/behavior are unaffected until someone opts in.
+
+**`a` (`Action::NewNotebook`) opens a guided source-kind picker *first*, before asking for anything
+else** — `App.show_notebook_source_picker` + `NotebookSourceKind::ALL` (`Local`/`GitHub`/`GitLab`/
+`GenericGit`/`Ssh`, `shiki-tui/src/app/mod.rs`), same list-picker shape (`show_X`/`X_index`/
+`handle_X_key`) as the template picker. This landed in two passes in the same session: the first
+version asked for a plain name *first* and only showed this picker as a follow-up question
+afterward (mirroring the old free-text "Git remote" prompt's position in the flow) — Omar tried it
+and immediately flagged that this wasn't the "guided" experience he'd actually asked for ("quería
+que fuera antes, como un guiado... para que te guiara según el que aplica"), so the picker was moved
+to open immediately on `a`, before any name/URL is typed, and the second pass is what's described
+below. **Don't reintroduce "ask for a name, then ask about a remote"** — the whole point is deciding
+*where this notebook comes from* before deciding anything else, since for every kind except Local
+the name is derived from the answer, not asked separately.
+
+`finish_notebook_source_picker` dispatches on the selection: **Local** opens the plain
+`PendingInput::NewNotebook` name prompt exactly as it always worked (still detects a pasted git
+URL/local path there too, as a defensive fallback — same `looks_like_git_url`/`looks_like_path`
+checks as before, `remote_template` auto-config still applies to the plain-name branch). **GitHub**/
+**GitLab** open `PendingInput::NewNotebookGitHubRepo`/`GitLabRepo`, asking only for `owner/repo` —
+`remote_url_from_owner_repo(host, spec)` builds `https://{host}/{spec}.git`, deliberately not
+splitting `spec` into separate owner/repo parts, which is *why* GitLab's nested `group/subgroup/repo`
+paths work with zero special-casing (it only needs "at least one `/`, nothing leading/trailing").
+**SSH** opens `PendingInput::NewNotebookSshRemote` (`host:path` or `user@host:path`, normalized via
+`normalize_ssh_remote` — defaults the user to `git`) — gated by a purely advisory
+`shiki_core::process::ssh_agent_or_key_available()` check (an agent socket *or* a default key file
+under `~/.ssh`) that only tweaks the prompt's title with a warning when neither is found, never
+blocks opening it. **Generic Git URL** opens `PendingInput::NewNotebookRemote` — the exact same
+free-text URL-or-local-path prompt this flow always had, just reached via an explicit menu choice
+now instead of being the only option. `Esc`/`q` at the picker itself just closes it — nothing was
+created yet at that point, so there's nothing to clean up or report beyond "new notebook cancelled".
+
+**Every remote-based kind (GitHub/GitLab/SSH/Generic-Git) funnels through `App::create_notebook_from_url`**
+once it's built a URL — the same function the pre-existing "paste a URL directly" fast path already
+used, now living in `sync.rs` (not `app/mod.rs`, where it started) so it can call the private
+`spawn_git_op` there. It derives the notebook's name from the URL (`notebook_name_from_git_url`), so
+none of these guided prompts ask for a name at all — typing `owner/repo` or `host:path` is the
+*only* question for that notebook.
+
+**The function is split into a synchronous half and a backgrounded half, and this split matters for
+which failures reopen the prompt and which don't.** `store.create` + `git::set_remote` run
+synchronously (both are fast, local-only — no network) and still return `Err(String)` on failure
+(bad URL shape, name collision, couldn't set remote), which the caller still reopens its prompt
+for, prefilled with whatever was typed and via `App::reopen_input_with_error` rather than a plain
+`start_input` — nothing was created yet at that point, so there's nothing to clean up either.
+`reopen_input_with_error` sets `App.pending_input_error: Option<String>`, which `draw.rs` shows in
+place of the prompt's normal muted hint line (same layout, just the theme's `error` color + bold,
+via a `render_input_with_message` helper both now share) — added because Omar tried the plain
+`set_status`-only version and pointed out the error was easy to miss in the footer, and asked for it
+"abajo en el input del modal" instead; both still happen (`set_status` first, for the log-history
+record, then the reopen), the modal text is just the thing actually catching the eye. `start_input`
+always clears `pending_input_error` on open, so it can never leak into an unrelated later prompt.
+The actual `git::pull`, though, now runs on a background thread via `spawn_git_op`
+(`GitOpKind::Clone`, see below) — **a real fix, not a refactor for its own sake**: the first version
+of this ran `pull` synchronously on the main thread, and Omar hit this directly — a bad/unreachable
+remote made the whole render loop freeze with *no* visible feedback at all (no spinner, no "in
+progress" message), indistinguishable from a hang or a crash ("no hay animación... eso no es
+seguro"). Because the pull is now async, `Ok(String)` from `create_notebook_from_url` is an
+*immediate* "cloning '⟨name⟩'…" status (shown the instant Enter is pressed), not the final outcome —
+and a **pull failure no longer reopens the prompt**, since by the time it's known the prompt may
+already be closed and the user doing something else entirely; it's reported through the normal
+status/log path instead, the same way a manual `p` failing already is. This is a deliberate trade-off
+(immediate responsiveness over "always offer an inline retry") — a failed clone still leaves the
+notebook there, remote set, ready for a manual `p` retry (or `R` to fix a wrong URL), same as any
+other pull failure in this app. Verified live against real repos: `github/gitignore` and
+`gitlab-org/gitlab-development-kit` clone successfully end-to-end through the GitHub/GitLab menu
+entries (arriving with the notebook already named after the repo and its notes already loaded, zero
+extra prompts); a nonexistent owner/repo and a nonexistent host both correctly show the immediate
+"cloning…" message, an animated footer spinner for the actual (sub-second, in this sandbox) duration
+of the failed attempt, and a clear final error afterward, with the app fully responsive throughout
+and the (empty, unconnected) notebook still left in place.
+
+**The GitHub entry also fires a purely advisory, backgrounded `gh` reachability check** —
+`App::spawn_github_preflight`/`check_github_preflight` (`key_handlers.rs`/`app/mod.rs`), a plain
+`std::thread::spawn` + fresh `mpsc::channel` polled by `poll_gh_preflight_channel` (called from
+`run()` next to `poll_update_channel`) — same shape as self-update's `update_rx`, deliberately
+*not* `sync.rs`'s `spawn_git_op`/`GitOpKind` machinery, which is specific to real sync/pull
+operations with their own in-flight/spinner state; this is a silent, one-shot, informational-only
+check with none of that. It never blocks the actual clone attempt, which fires synchronously right
+away regardless (unchanged from `create_notebook_from_url`'s existing behavior). Plain exit-code
+checks only, no JSON parsing: `gh` missing from `$PATH` → silent (nothing to check); `gh auth
+status` fails → "gh isn't authenticated — if this repo is private, cloning may fail"; that succeeds
+but `gh repo view {owner/repo}` fails → "could not find or access '{owner/repo}' via gh"; both
+succeed → silent (a reachable repo is a reachable repo, public or private, nothing worth saying).
+Uses a new shared `shiki_core::process::run_with_timeout` (promoted out of
+`shiki-core/src/voice.rs`'s own previously-private helper of the same name/shape, now a thin caller
+of the shared one — one "run a real external command safely" implementation instead of two) so a
+stalled `gh` invocation can't hang the background thread indefinitely.
 
 **Git remote support** (`shiki-core/src/git.rs::set_remote`/`remote_url`, plus the pre-existing
 `pull`/`push`/`commit_all`) lets a notebook's `origin` be a normal git URL or a local path — git2
@@ -1317,8 +1493,62 @@ sends its `GitOpResult` back over `sync_rx`, polled once per `run()` iteration
 Only one operation runs at a time, globally (`App.sync_in_flight: Option<String>`, the label shown
 by the footer's spinner) — a second request while one's in flight is reported ("a sync is already
 running…") and dropped rather than queued, same simplicity level the self-updater already has.
-`GitOpKind` (`Sync`/`Pull`/`PullAll`) tells `apply_git_op_result` what to refresh once the result
-arrives: `Sync`/`Pull` only touch `git_status`/`reload_notes` if the notebook they were about is
+`App.sync_started_at: Option<Instant>` is set alongside `sync_in_flight` in `spawn_git_op` (cleared
+alongside it in `poll_sync_channel`) so the spinner can show elapsed seconds
+(`status_bar.rs`: `"{frame} syncing '{label}' ({elapsed}s)…"`) — added after Omar hit the
+new-notebook wizard's GitHub clone against his own real repo (`sazardev/shiki`) and, watching the
+spinner alone with no sense of duration, couldn't tell "still working" from "stuck." Verified live
+in this sandbox that it was neither: `ss -tnp` showed a genuinely `ESTAB`lished HTTPS connection to
+a real GitHub IP with a nonzero recv-queue throughout, and the clone completed successfully at
+~75s — `sazardev/shiki`'s own git history is legitimately sizable (every release regenerates and
+commits fresh per-theme screenshots/demo GIFs/OG images across 37 themes and many releases, per the
+Marketing site section above), not a hang. A byte-level "X received so far" progress readout would
+be even more informative but needs streaming updates from the background thread to the main one
+(the current channel only ever carries the *final* `GitOpResult`, once) — elapsed time alone was
+judged enough to resolve the actual ambiguity, so that bigger plumbing change wasn't taken on here.
+
+**`Ctrl+C` cancels an in-flight `spawn_git_op` (`App::cancel_sync`)** — checked at the very top of
+`on_key`, before every other modal/mode dispatch, so it works no matter what else is open (nothing
+else in this app binds `Ctrl+C`, and crossterm's raw mode delivers it as a plain key event, not
+SIGINT, so there's no signal handler to fight either). Investigated whether a *real* cancellation
+(actually aborting the underlying `git2` call) was feasible first: libgit2 only exposes cancellation
+through callbacks that fire *after* a connection is already established and data is flowing
+(`RemoteCallbacks::transfer_progress`/`sideband_progress`, returning `false` to abort) — a hang
+during DNS resolution or the initial TCP/TLS handshake happens before any such callback would ever
+fire, so no safe, complete "abort no matter what phase it's in" hook exists. Given that, `cancel_sync`
+does the honest, achievable thing instead: it clears `sync_in_flight`/`sync_started_at`/`sync_rx`
+immediately, which (a) makes the spinner disappear and (b) frees `spawn_git_op`'s "only one at a
+time" slot right away, so a *different* action (even a new sync) can start without waiting. The
+original background thread is **not** killed — it keeps running against whatever it was doing and
+eventually finishes on its own, but since `sync_rx` is already gone by then, its `tx.send(..)`
+(already wrapped in `let _ = ...`, same as every other `spawn_git_op` closure) just fails silently
+and the result is discarded. Verified live: cancelling a clone stuck against `192.0.2.1` (a
+non-routable TEST-NET address, chosen specifically so the connect attempt hangs rather than
+failing fast) via `Ctrl+C` after a few seconds immediately cleared the spinner and let a brand new
+`a` (new-notebook picker) open right away with no delay.
+
+**`general.auto_pull_on_switch` (off by default) pulls a notebook automatically the first time it's
+selected each session** — `App::maybe_auto_pull_on_switch`, called from `App::set_selected_notebook`
+whenever the selection actually moves. Unlike manual `p` (`pull_notebook`), every guard here fails
+*silently*: no remote configured, already auto-pulled (or explicitly pulled/cloned) this session,
+mid-merge, or something else already syncing are all the ordinary case for a passive background
+trigger, not something worth interrupting the user over — only a real pull attempt is ever visible,
+through the exact same `spawn_pull_op`/spinner path manual `p` uses (extracted out of
+`pull_notebook` specifically so the two can't drift into pulling differently).
+`App.auto_pulled_notebooks: HashSet<String>` is the "already handled this session" record, marked
+by `pull_notebook`/`pull_all_notebooks` (any explicit pull attempt, success or failure, counts) and
+by `create_notebook_from_url` (marked *before* `set_selected_notebook` runs, not after — selecting
+the just-created notebook would otherwise race the function's own explicit clone-pull for the exact
+same notebook and steal `spawn_git_op`'s single in-flight slot out from under it; this was a real
+bug caught by tracing the call order, not just a defensive guess). Verified live: toggling the
+setting on, giving a notebook a remote via `R` without pulling, switching away and back triggered a
+silent pull that completed and populated its notes; switching away and back again afterward did
+*not* re-trigger, confirming the once-per-session cap actually holds.
+
+`GitOpKind` (`Sync`/`Pull`/`PullAll`/`Publish`/`Clone` — the last added later, for a brand-new
+notebook's first pull inside `App::create_notebook_from_url`) tells `apply_git_op_result` what to
+refresh once the result arrives: `Sync`/`Pull`/`Clone` only touch `git_status`/`reload_notes` if the
+notebook they were about is
 *still* the selected one by the time the background thread finishes — a real correctness need this
 introduced, not just carried over, since the selection can change while the operation is in
 flight, which was never possible in the old synchronous version. The drawer's `drawer_statuses`

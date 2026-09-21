@@ -329,7 +329,7 @@
       <table class="ref-table">
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><code>a</code></td><td>New notebook. A git URL (<code>https://</code>, <code>git@host:...</code>, <code>ssh://</code>, <code>git://</code>) derives the notebook name from the repo instead, creates it, sets its remote, and pulls immediately — importing an existing repo is just <code>a</code> + paste URL + Enter. A filesystem path (<code>/abs/path</code>, <code>~/docs</code>, <code>./relative</code>) adopts that existing directory as a notebook instead of creating an empty one — name derived from the last path segment; asks to <code>git init</code> first if it isn't already a repo</td></tr>
+          <tr><td><code>a</code></td><td>New notebook — opens a "where from?" menu first: Local / GitHub / GitLab / Generic Git URL / SSH. <strong>Local</strong> asks for a name, same as before (a pasted git URL/path there still works too, as a fallback). <strong>GitHub</strong>/<strong>GitLab</strong> only ask for <code>owner/repo</code> — shiki builds the full URL, derives the notebook's name from the repo, sets the remote, and pulls immediately, no separate name question. <strong>Generic Git URL</strong> takes a full URL (<code>https://</code>, <code>git@host:...</code>, <code>ssh://</code>, <code>git://</code>) or a local path (<code>/abs/path</code>, <code>~/docs</code>, <code>./relative</code>, adopted as-is — name from the last path segment, asks to <code>git init</code> first if it isn't already a repo). <strong>SSH</strong> takes <code>host:path</code> or <code>user@host:path</code> (<code>git@</code> assumed if no user given), warning (non-blocking) if no SSH key/agent is detected. A failed attempt on any of these reopens the same prompt prefilled with what was typed instead of losing it</td></tr>
           <tr><td><code>r</code></td><td>Rename notebook</td></tr>
           <tr><td><code>d</code></td><td>Delete notebook (with confirmation)</td></tr>
           <tr><td><code>s</code></td><td>Git sync — commit (message auto-built from the diff, naming files directly for a small change, e.g. "shiki: added (First note.md)"), + push if the resolved policy's <code>auto_push</code> is on</td></tr>
@@ -337,8 +337,17 @@
           <tr><td><code>p</code></td><td>Git pull (fetch + fast-forward merge from the configured remote)</td></tr>
           <tr><td><code>P</code></td><td>Git pull for every notebook that has a remote configured</td></tr>
           <tr><td><code>R</code></td><td>Set the notebook's git remote (URL or local path)</td></tr>
+          <tr><td><code>Ctrl+C</code></td><td>Cancel whatever git operation (<code>s</code>/<code>u</code>/<code>p</code>/<code>P</code>, an auto-pull, or a new-notebook clone) is currently showing in the footer spinner — only intercepted while one is actually running</td></tr>
         </tbody>
       </table>
+      <p class="muted" style="max-width:70ch; font-size:0.88rem;">
+        The footer spinner shown while any of these run in the background also displays elapsed
+        seconds (<code>⠙ syncing 'notebook' (34s)…</code>), so a large clone/pull reads as "still
+        working" instead of looking indistinguishable from a hang. <code>Ctrl+C</code> doesn't
+        force-kill the underlying network call — that can't be done safely mid-flight — it just
+        stops waiting for it and frees the "only one op at a time" slot immediately; the abandoned
+        attempt may still finish quietly on disk, with its result simply discarded.
+      </p>
       <p class="muted" style="max-width:70ch; font-size:0.88rem;">
         Beyond manual <code>s</code>, a notebook can sync <strong>itself</strong> in the background:
         <code>[git] auto_sync = true</code> (off by default) syncs automatically every
@@ -347,7 +356,11 @@
         <code>auto_sync_every</code> can all be overridden per notebook under
         <code>[notebooks.&lt;name&gt;]</code>, falling back to the global <code>[git]</code> values
         for anything left unset. A failed push never blocks or loses anything — the commit already
-        happened locally either way, and the next sync attempt just tries the push again.
+        happened locally either way, and the next sync attempt just tries the push again. The other
+        direction — pulling — can also happen automatically: <code>[general] auto_pull_on_switch =
+        true</code> (off by default) pulls a notebook the first time it's selected each session,
+        provided it has a remote configured; silent when there's nothing to do, only a real pull
+        attempt shows up in the footer, same as manual <code>p</code>.
       </p>
 
       <div class="doc-callout">
@@ -1055,6 +1068,7 @@ Content in **markdown**.
           <tr><td><code>wikilink_autocomplete</code></td><td><code>true</code></td><td>Typing <code>[[</code> in the inline editor opens the wikilink autocomplete menu; off falls through to a literal <code>[[</code></td></tr>
           <tr><td><code>daily_agenda</code></td><td><code>true</code></td><td>A new daily note gets a "## Due today" section listing pending tasks across every notebook</td></tr>
           <tr><td><code>compact_footer</code></td><td><code>false</code></td><td>Hides char/word count, reading time, and note-count detail from the footer, leaving just the essentials</td></tr>
+          <tr><td><code>show_borders</code></td><td><code>true</code></td><td>When true, every panel/popup draws its themed border. Off removes the box-drawing border everywhere — titles still show, since a panel's title reserves its own row independent of whether a border is actually drawn</td></tr>
           <tr><td><code>status_message_timeout_secs</code></td><td><code>2</code></td><td>How long a footer status message stays visible before clearing itself (the full message is always in the logs modal regardless)</td></tr>
           <tr><td><code>drawer_width</code></td><td><code>30</code></td><td>Width in columns of the notebook drawer (<code>leader</code> then <code>b</code>); clamped against the frame's actual width at render time</td></tr>
           <tr><td><code>tasks_show_done_default</code></td><td><code>false</code></td><td>Whether the tasks view starts showing every task, including done ones, instead of just pending</td></tr>
@@ -1067,6 +1081,7 @@ Content in **markdown**.
           <tr><td><code>chafa_path</code></td><td><code>""</code></td><td>Absolute path to a <code>chafa</code> binary that isn't on <code>$PATH</code>; empty means look it up on <code>$PATH</code></td></tr>
           <tr><td><code>preview_image_scale</code></td><td><code>0.5</code></td><td>Fraction of the preview panel's width the rendered image art is drawn at (<code>(0.0, 1.0]</code>)</td></tr>
           <tr><td><code>attachments_dir</code></td><td><code>"attachments"</code></td><td>Folder (relative to the notebook root) where pasted clipboard images are saved; the inserted <code>![pasted-…](attachments/…)</code> link resolves from any note depth. An empty value falls back to <code>attachments</code></td></tr>
+          <tr><td><code>auto_pull_on_switch</code></td><td><code>false</code></td><td>Switching to a notebook that has a remote configured triggers a background pull automatically (same footer spinner as manual <code>p</code>), once per notebook per session</td></tr>
         </tbody>
       </table>
       <div class="doc-callout">
@@ -1114,7 +1129,7 @@ Content in **markdown**.
         <tbody>
           <tr><td><code>name</code></td><td><code>"gruvbox-dark"</code></td><td>Which built-in theme to use as the base (<code>shiki theme list</code> shows every name)</td></tr>
           <tr><td><code>icons</code></td><td><code>true</code></td><td>When false, every Nerd Font glyph (notebook/note icons, git status, the list-selection marker, …) falls back to plain text — for a terminal font that isn't Nerd-Fonts-patched</td></tr>
-          <tr><td><code>notebooks</code></td><td>unset</td><td>Per-notebook theme overrides (<code>{ personal = "LoL (Jinx)", work = "Cyberpunk 2077" }</code>): a notebook's entry wins over <code>name</code> while it's focused. The theme picker writes here when a notebook is selected; the CLI sets it with <code>shiki theme set &lt;theme&gt; --notebook &lt;name&gt;</code></td></tr>
+          <tr><td><code>notebooks</code></td><td>unset</td><td>Legacy per-notebook base-theme-name map — superseded by <code>[notebooks.&lt;name&gt;] theme_name</code> below, which also covers colors and icons. Nothing writes here anymore; still read for a config saved before that field existed</td></tr>
           <tr><td><code>[theme.overrides]</code></td><td>all unset</td><td>Override any of the 19 color slots (see <a href="#themes-ref">Included themes</a>) individually — anything left unset falls back to <code>name</code>'s own value for that slot</td></tr>
         </tbody>
       </table>
@@ -1249,14 +1264,28 @@ pdf_theme = "default"
           <tr><td><code>path</code></td><td>unset (lives under the data directory)</td><td>An absolute path to an existing directory on disk — this notebook lives there instead of under <code>data_dir</code>/the default data directory. Must be absolute; a relative value is ignored (<code>shiki doctor</code> warns if one is found) rather than silently resolved against whatever directory the process happened to be launched from</td></tr>
           <tr><td><code>hidden</code></td><td>unset (<code>false</code>)</td><td>Set when "delete notebook" was answered with "just remove the reference" instead of "delete the files" — the directory on disk is left untouched, this only stops the notebook from being listed/tracked. Reversible in-app: Settings → NOTEBOOKS lists hidden notebooks (marked <code>(hidden)</code>) and drilling into one lets you clear the flag to restore it</td></tr>
           <tr><td><code>encrypt</code></td><td><code>false</code></td><td>Encrypts every note in this notebook at rest with a passphrase — no global default to inherit, opt-in per notebook. Managed via <code>shiki notebook encrypt/decrypt/rekey &lt;name&gt;</code> or Settings → NOTEBOOKS, not by hand-editing this value (the passphrase itself is never stored here or anywhere else — see <a href="#encryption">Encryption</a> above)</td></tr>
+          <tr><td><code>theme_name</code></td><td>inherits <code>[theme] name</code></td><td>This notebook's own base theme — wins the moment it's focused, no restart. Set via the theme picker (<code>leader</code> then <code>c</code>, while this notebook is selected) or <code>shiki theme set &lt;theme&gt; --notebook &lt;name&gt;</code></td></tr>
+          <tr><td><code>theme_icons</code></td><td>inherits <code>[theme] icons</code></td><td>This notebook's own icons override — a 3-state cycle (unset/on/off) from Settings → NOTEBOOKS → (notebook) → <code>icons</code></td></tr>
+          <tr><td>any of the 19 color slots</td><td>inherits <code>[theme.overrides]</code>/the base theme</td><td>Same 19 slots as <code>[theme.overrides]</code> (see above), scoped to just this notebook — layered on top of the global override, which is layered on top of the resolved base theme. Scaffold all 19 at once with <code>shiki theme create --from &lt;theme&gt; --notebook &lt;name&gt;</code></td></tr>
         </tbody>
       </table>
+      <p style="max-width:70ch;">
+        Settings → NOTEBOOKS → (notebook) also has an "apply to all" action (<code>A</code>) that
+        clones this notebook's fully-resolved theme — base name, all 19 colors, and icons, whether
+        inherited or already customized — onto every <em>other</em> notebook in one shot. Handy for
+        "maximum customization" in reverse: pick and tweak one notebook's look, then broadcast it
+        everywhere instead of repeating the setup per notebook.
+      </p>
       <pre class="code">[notebooks.work]
 auto_sync = true
 auto_sync_every = 3
 auto_push = true
 # encrypt = true
 # hidden = true  # set by "just remove the reference" on delete; un-hide from Settings → NOTEBOOKS
+theme_name = "nord"
+theme_icons = true
+# accent = "#88c0d0"
+# bg = "#2e3440"
 
 [notebooks.alcateia]
 path = "/Users/me/obsidian-vaults/alcateia"
@@ -1386,6 +1415,9 @@ daily_agenda = true
 # Hides char/word count, reading time, and note-count detail from the
 # footer, leaving just the essentials.
 compact_footer = false
+# When true (default), every panel/popup draws its themed border. Off
+# removes the box-drawing border everywhere (titles still show).
+show_borders = true
 # How long a footer status message stays visible before clearing itself.
 status_message_timeout_secs = 2
 # Width in columns of the notebook drawer (leader+`b`). Clamped against
@@ -1566,6 +1598,13 @@ auto_sync_every = 3
 auto_push = true
 # encrypt = true
 # hidden = true  # set by "just remove the reference" on delete; un-hide from Settings → NOTEBOOKS
+# Full per-notebook theme customization: base name, any of the 19 color
+# slots, and its own icons toggle — independent of the global [theme] and
+# of every other notebook. Settings → NOTEBOOKS → work → "apply to all"
+# clones this onto every other notebook in one shot.
+theme_name = "nord"
+theme_icons = true
+# accent = "#88c0d0"
 
 # Custom entries for the inline editor's `/`-menu, keyed by trigger. Empty by
 # default — the built-in commands (h1/h2/h3/bold/italic/code/math/table/check/
