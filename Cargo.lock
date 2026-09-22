@@ -5728,7 +5728,7 @@ dependencies = [
 
 [[package]]
 name = "shiki-cli"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -5754,7 +5754,7 @@ dependencies = [
 
 [[package]]
 name = "shiki-config"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "directories",
@@ -5766,7 +5766,7 @@ dependencies = [
 
 [[package]]
 name = "shiki-core"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "age",
  "chrono",
@@ -5792,7 +5792,7 @@ dependencies = [
 
 [[package]]
 name = "shiki-desktop"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "chrono",
  "git2",
@@ -5811,7 +5811,7 @@ dependencies = [
 
 [[package]]
 name = "shiki-mcp"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5827,7 +5827,7 @@ dependencies = [
 
 [[package]]
 name = "shiki-native-host"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5839,7 +5839,7 @@ dependencies = [
 
 [[package]]
 name = "shiki-tui"
-version = "0.9.7"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "arboard",

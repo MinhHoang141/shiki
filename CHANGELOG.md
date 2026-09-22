@@ -6,6 +6,8 @@ semver yet (pre-1.0), but version bumps are still meaningful and tracked here.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-22
+
 ### Added
 
 - **`shiki agent status`/`connect <client|--all>`/`disconnect`** — one-command auto-connect for

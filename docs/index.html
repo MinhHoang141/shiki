@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>shiki (私記) — a TUI note-taking app for people who live in the terminal</title>
-  <meta name="description" content="shiki is a three-pane, Yazi-inspired TUI note-taking app in Rust. Notebooks are independent git repos, every note has real version history, and everything is keyboard-driven and themeable." />
-  <meta name="keywords" content="shiki, TUI, terminal, note-taking, notes app, Rust, ratatui, git, Markdown, CLI, vim keybindings, Yazi, Catppuccin, Gruvbox, Tokyo Night, Nord, Solarized, Dracula, One Dark, Monokai, open source, self-hosted notes, plain text notes" />
+  <meta name="description" content="shiki is a three-pane, Yazi-inspired TUI note-taking app in Rust. Notebooks are independent git repos, every note has real version history, everything is keyboard-driven and themeable, and it now speaks MCP so AI agents can drive it directly." />
+  <meta name="keywords" content="shiki, TUI, terminal, note-taking, notes app, Rust, ratatui, git, Markdown, CLI, MCP, Model Context Protocol, AI agents, Claude Code, agentic, vim keybindings, Yazi, Catppuccin, Gruvbox, Tokyo Night, Nord, Solarized, Dracula, One Dark, Monokai, open source, self-hosted notes, plain text notes" />
   <meta name="author" content="sazardev" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://sazardev.github.io/shiki/" />
@@ -51,7 +51,7 @@
     "downloadUrl": "https://github.com/sazardev/shiki/releases/latest",
     "applicationCategory": "Utility",
     "operatingSystem": "Linux, Windows, macOS",
-    "softwareVersion": "0.9.7",
+    "softwareVersion": "0.10.0",
     "programmingLanguage": "Rust",
     "license": "https://github.com/sazardev/shiki/blob/main/LICENSE",
     "codeRepository": "https://github.com/sazardev/shiki",
@@ -65,7 +65,7 @@
       "name": "sazardev",
       "url": "https://github.com/sazardev"
     },
-    "keywords": "TUI, terminal, note-taking, Rust, git, Markdown, CLI, open source"
+    "keywords": "TUI, terminal, note-taking, Rust, git, Markdown, CLI, MCP, AI agents, open source"
   }
   </script>
 </head>
@@ -75,6 +75,7 @@
     <div class="brand">shiki (私記)<span class="cursor"></span></div>
     <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="site-nav">☰</button>
     <nav id="site-nav">
+      <a href="#agentic">Agents</a>
       <a href="#themes">Themes</a>
       <a href="#templates">Templates</a>
       <a href="#features">Features</a>
@@ -149,6 +150,60 @@
           </div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section id="agentic">
+    <div class="container">
+      <span class="eyebrow">New in v0.10.0</span>
+      <h2>Built for AI agents, not just you.</h2>
+      <p class="muted" style="max-width: 62ch;">
+        shiki now speaks <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP</a>
+        (Model Context Protocol) natively — any agent that can call tools can read, write, tag,
+        organize, and sync your notes exactly the way you would by hand, with no <code>$EDITOR</code>
+        or TUI in the loop.
+      </p>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="icon">⚡</div>
+          <h3>One command connects any agent</h3>
+          <p><code>shiki agent connect --all</code> registers <code>shiki-mcp</code> straight into
+          Claude Code, Claude Desktop, Cursor, Windsurf, OpenCode, and Continue's own config —
+          plus usage guidance, so the agent knows how to use it well from the first call.</p>
+        </div>
+        <div class="feature-card">
+          <div class="icon">⌘</div>
+          <h3>28 typed MCP tools</h3>
+          <p>Full parity with the CLI — read, write, tag, query, move, encrypt, sync — each with a
+          real JSON schema instead of flags to construct by hand. Calls go straight into
+          <code>shiki-core</code>, never through the <code>shiki</code> binary itself.</p>
+        </div>
+        <div class="feature-card">
+          <div class="icon">❯_</div>
+          <h3>A CLI an agent can drive end to end</h3>
+          <p>Every note/folder operation — create, edit, rename, move, tag, delete — has a
+          non-interactive form with <code>--json</code> output and a real exit code. No
+          <code>$EDITOR</code>, no TUI, no guessing whether it worked.</p>
+        </div>
+        <div class="feature-card">
+          <div class="icon">▤</div>
+          <h3>Paginated for agent context windows</h3>
+          <p><code>list</code>/<code>search</code>/<code>query</code>/<code>tasks</code>/<code>log</code>
+          cap at 50 items unless told otherwise, so a large notebook can't blow out an agent's
+          context by accident. <code>shiki index</code> gives an agent its bearings in one call.</p>
+        </div>
+      </div>
+
+      <div class="code-block" style="max-width: 44ch; margin-top: 2rem;">
+        <pre>shiki agent connect --all</pre>
+        <button class="copy-btn" type="button" aria-label="Copy command">Copy</button>
+      </div>
+      <p class="install-more">
+        See the <a href="documentation.html#mcp">MCP server</a> and
+        <a href="documentation.html#cli">agent-friendly CLI</a> docs for the full tool list and
+        setup details.
+      </p>
     </div>
   </section>
 

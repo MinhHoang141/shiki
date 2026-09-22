@@ -94,6 +94,7 @@
       <a href="#modes">Modes</a>
       <a href="#keybindings">Keybindings</a>
       <a href="#cli">CLI</a>
+      <a href="#mcp">AI Agents (MCP)</a>
       <a href="#capture">Quick capture</a>
       <a href="#encryption">Encryption</a>
       <a href="#filesystem">Filesystem</a>
@@ -643,7 +644,7 @@ shiki agent disconnect cursor         # reverses connect — removes the MCP ent
           small too.
         </p>
       </div>
-      <h3>MCP server (<code>shiki-mcp</code>)</h3>
+      <h3 id="mcp">MCP server (<code>shiki-mcp</code>)</h3>
       <p style="max-width:70ch;">
         A separate binary, <code>shiki-mcp</code>, exposes the same operations as typed MCP (Model
         Context Protocol) tools — an AI client calls them directly with structured,
@@ -681,7 +682,7 @@ shiki agent disconnect cursor         # reverses connect — removes the MCP ent
         — the only source available, since an MCP server has no TTY to ever fall back to a prompt
         on.
       </p>
-      <h3>Agent auto-connect (<code>shiki agent</code>)</h3>
+      <h3 id="agent-connect">Agent auto-connect (<code>shiki agent</code>)</h3>
       <p style="max-width:70ch;">
         <code>shiki agent status</code> / <code>connect &lt;client|--all&gt;</code> /
         <code>disconnect &lt;client|--all&gt;</code> register <code>shiki-mcp</code> with a
