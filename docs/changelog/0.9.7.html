@@ -1,0 +1,154 @@
+<!--
+  Per-version release page template. `scripts/generate_release_pages.py`
+  fills in every {{PLACEHOLDER}} with plain string substitution and writes
+  the result to docs/changelog/0.9.7.html. Paths inside are written
+  relative to that output location (one level under docs/), i.e. `../css/`,
+  `../assets/`, `../index.html` etc. — not relative to this template file.
+
+  Unlike changelog.html (which fetches CHANGELOG.md live via JS so it can
+  never drift, see docs/js/main.js), this page's changelog body is baked in
+  statically at generation time — it has to be, since link-unfurlers (the
+  actual point of this page existing) read the raw HTML and never execute
+  JS, so the og:title/og:description/og:image and the visible content must
+  already be correct in the file as committed.
+-->
+<!DOCTYPE html>
+<html lang="en" data-theme="gruvbox-dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>shiki v0.9.7 — Release notes</title>
+  <meta name="description" content="Full per-notebook theme customization — every notebook can now have its own base theme, all 19 individual color-slot overrides, and its own icons toggle, not…" />
+  <meta name="keywords" content="shiki changelog, shiki v0.9.7, shiki release notes" />
+  <meta name="author" content="sazardev" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://sazardev.github.io/shiki/changelog/0.9.7.html" />
+
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://sazardev.github.io/shiki/changelog/0.9.7.html" />
+  <meta property="og:site_name" content="shiki" />
+  <meta property="og:title" content="shiki v0.9.7 — Release notes" />
+  <meta property="og:description" content="Full per-notebook theme customization — every notebook can now have its own base theme, all 19 individual color-slot overrides, and its own icons toggle, not…" />
+  <meta property="og:image" content="https://sazardev.github.io/shiki/assets/og/0.9.7.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="shiki v0.9.7 — release card" />
+  <meta property="og:locale" content="en_US" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="shiki v0.9.7 — Release notes" />
+  <meta name="twitter:description" content="Full per-notebook theme customization — every notebook can now have its own base theme, all 19 individual color-slot overrides, and its own icons toggle, not…" />
+  <meta name="twitter:image" content="https://sazardev.github.io/shiki/assets/og/0.9.7.png" />
+  <meta name="twitter:image:alt" content="shiki v0.9.7 — release card" />
+
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="../assets/apple-touch-icon.png" />
+  <link rel="alternate" type="application/rss+xml" title="shiki changelog" href="../feed.xml" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="../css/styles.css" />
+  <link rel="stylesheet" href="../css/documentation.css" />
+
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "Article", "headline": "shiki v0.9.7 — Release notes", "description": "Full per-notebook theme customization — every notebook can now have its own base theme, all 19 individual color-slot overrides, and its own icons toggle, not…", "image": "https://sazardev.github.io/shiki/assets/og/0.9.7.png", "url": "https://sazardev.github.io/shiki/changelog/0.9.7.html", "mainEntityOfPage": {"@type": "WebPage", "@id": "https://sazardev.github.io/shiki/changelog/0.9.7.html"}, "author": {"@type": "Person", "name": "sazardev", "url": "https://github.com/sazardev"}, "publisher": {"@type": "Organization", "name": "shiki", "logo": {"@type": "ImageObject", "url": "https://sazardev.github.io/shiki/assets/favicon-512.png"}}, "datePublished": "2026-09-21", "dateModified": "2026-09-21"}</script>
+</head>
+<body class="doc-page">
+
+  <header class="topbar">
+    <div class="brand"><a href="../index.html" style="color:inherit;text-decoration:none;">shiki (私記)</a><span class="cursor"></span></div>
+    <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="site-nav">☰</button>
+    <nav id="site-nav">
+      <a href="../index.html#themes">Themes</a>
+      <a href="../index.html#features">Features</a>
+      <a href="../index.html#install">Install</a>
+      <a href="../documentation.html">Docs</a>
+      <a href="../changelog.html" class="active">Changelog</a>
+      <a href="../press.html">Press</a>
+      <a href="https://github.com/sazardev/shiki">GitHub</a>
+      <span class="version-chip-wrap" id="version-chip-wrap">
+        <button type="button" class="pill pill-button" id="version-pill" hidden></button>
+        <div class="version-popover" id="version-popover" role="dialog" aria-label="What's new" hidden>
+          <div class="version-popover-header">
+            <strong>What's new</strong>
+            <a href="../changelog.html">Full changelog →</a>
+          </div>
+          <div class="version-popover-body changelog-body" id="version-popover-content">
+            <p class="changelog-loading">Loading changelog…</p>
+          </div>
+        </div>
+      </span>
+    </nav>
+  </header>
+
+  <section class="doc-hero">
+    <div class="container">
+      <span class="eyebrow"><a href="../changelog.html">← Full changelog</a></span>
+      <h1>shiki v0.9.7</h1>
+      <p class="muted" style="max-width: 66ch;">Released 2026-09-21.</p>
+      <div class="release-share-row">
+        <span class="release-share-label">Share:</span>
+        <a class="release-share-link" href="https://twitter.com/intent/tweet?text=shiki%20v0.9.7%3A%20Full%20per-notebook%20theme%20customization%20%E2%80%94%20every%20notebook%20can%20now%20have%20its%20own%20base%20theme%2C%20all%2019%20individual%20color-slot%20overrides%2C%20and%20its%20own%20icons%20toggle%2C%20not%E2%80%A6&amp;url=https%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.7.html" target="_blank" rel="noopener">X</a>
+        <a class="release-share-link" href="https://bsky.app/intent/compose?text=shiki%20v0.9.7%3A%20Full%20per-notebook%20theme%20customization%20%E2%80%94%20every%20notebook%20can%20now%20have%20its%20own%20base%20theme%2C%20all%2019%20individual%20color-slot%20overrides%2C%20and%20its%20own%20icons%20toggle%2C%20not%E2%80%A6%20https%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.7.html" target="_blank" rel="noopener">Bluesky</a>
+        <a class="release-share-link" href="https://www.reddit.com/submit?url=https%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.7.html&amp;title=shiki%20v0.9.7%3A%20Full%20per-notebook%20theme%20customization%20%E2%80%94%20every%20notebook%20can%20now%20have%20its%20own%20base%20theme%2C%20all%2019%20individual%20color-slot%20overrides%2C%20and%20its%20own%20icons%20toggle%2C%20not%E2%80%A6" target="_blank" rel="noopener">Reddit</a>
+        <a class="release-share-link" href="https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.7.html&amp;t=shiki%20v0.9.7%3A%20Full%20per-notebook%20theme%20customization%20%E2%80%94%20every%20notebook%20can%20now%20have%20its%20own%20base%20theme%2C%20all%2019%20individual%20color-slot%20overrides%2C%20and%20its%20own%20icons%20toggle%2C%20not%E2%80%A6" target="_blank" rel="noopener">Hacker News</a>
+        <a class="release-share-link" href="https://wa.me/?text=shiki%20v0.9.7%3A%20Full%20per-notebook%20theme%20customization%20%E2%80%94%20every%20notebook%20can%20now%20have%20its%20own%20base%20theme%2C%20all%2019%20individual%20color-slot%20overrides%2C%20and%20its%20own%20icons%20toggle%2C%20not%E2%80%A6%20https%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.7.html" target="_blank" rel="noopener">WhatsApp</a>
+        <a class="release-share-link" href="https://t.me/share/url?url=https%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.7.html&amp;text=shiki%20v0.9.7%3A%20Full%20per-notebook%20theme%20customization%20%E2%80%94%20every%20notebook%20can%20now%20have%20its%20own%20base%20theme%2C%20all%2019%20individual%20color-slot%20overrides%2C%20and%20its%20own%20icons%20toggle%2C%20not%E2%80%A6" target="_blank" rel="noopener">Telegram</a>
+        <a class="release-share-link" href="mailto:?subject=shiki%20v0.9.7%20released&amp;body=shiki%20v0.9.7%3A%20Full%20per-notebook%20theme%20customization%20%E2%80%94%20every%20notebook%20can%20now%20have%20its%20own%20base%20theme%2C%20all%2019%20individual%20color-slot%20overrides%2C%20and%20its%20own%20icons%20toggle%2C%20not%E2%80%A6%0A%0Ahttps%3A%2F%2Fsazardev.github.io%2Fshiki%2Fchangelog%2F0.9.7.html">Email</a>
+        <button type="button" class="copy-btn copy-btn-inline" data-copy-text="🚀 shiki v0.9.7 is out — Full per-notebook theme customization — every notebook can now have its own base theme, all 19 individual color-slot overrides, and its own icons toggle, not…
+
+https://sazardev.github.io/shiki/changelog/0.9.7.html
+
+#rustlang #TUI #opensource">Copy announcement</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container release-layout">
+      <div class="release-shot">
+        <div class="release-shot-frame">
+          <img src="../assets/screenshots/gruvbox-dark.png" alt="shiki v0.9.7, running in a terminal" loading="lazy" />
+        </div>
+      </div>
+      <div class="changelog-body release-notes">
+<h4>Added</h4>
+<ul>
+<li><strong>Full per-notebook theme customization</strong> — every notebook can now have its own base theme, all 19 individual color-slot overrides, and its own icons toggle, not just the base theme name (<code>[theme.notebooks]</code>, the only per-notebook thing that existed before). Set via the theme picker (<code>leader</code> then <code>c</code>, while that notebook is selected), <code>shiki theme set &lt;theme&gt; --notebook &lt;name&gt;</code>, or <code>shiki theme create --from &lt;theme&gt; --notebook &lt;name&gt;</code> (scaffolds all 19 color keys at once, same as the existing global scaffold command); Settings → NOTEBOOKS → (notebook) gains an <code>icons</code> 3-state cycle (unset/on/off) and a <code>theme_overrides</code> row showing how many of the 19 slots are set. A new &quot;apply to all&quot; action (<code>A</code>, from that same Settings drill-down) clones one notebook&#x27;s fully-resolved theme — base name, colors, and icons, whether inherited or already customized — onto every other notebook in one shot, for broadcasting a look everywhere instead of repeating the setup per notebook. Lives in the same <code>[notebooks.&lt;name&gt;]</code> table git/path/hidden/encrypt overrides already use (new <code>theme_name</code>/<code>theme_icons</code>/color-slot fields), not a new table — the legacy <code>[theme.notebooks]</code> name-only map is still read for configs written before this, just never written to anymore.</li>
+<li><strong>New notebook (<code>a</code>) opens a &quot;where from?&quot; menu first, before asking for anything else</strong> — Local / GitHub / GitLab / Generic Git URL / SSH, instead of always asking for a plain name up front. GitHub and GitLab only ask for <code>owner/repo</code>: shiki builds the full URL, derives the notebook&#x27;s name from the repo, sets the remote, and pulls immediately — no separate name question at all. SSH takes <code>host:path</code> or <code>user@host:path</code> (defaults the user to <code>git</code>) and warns (non-blocking) if no SSH key/agent is detected. Generic Git URL is the same free-text URL-or-local-path prompt this flow always had, just reached via an explicit menu choice now; Local asks for a name exactly like before. Picking GitHub also runs a silent, backgrounded <code>gh auth status</code>/<code>gh repo view</code> reachability check and surfaces a warning if something looks wrong — advisory only, never blocks the actual clone attempt. A failed attempt on any of these reopens the same prompt prefilled with what was typed, instead of losing it — and now shows the actual error right below the input box, in the theme&#x27;s error color, instead of only in the (easily-missed, truncatable) footer status line; the notebook itself is never at risk either way, since it isn&#x27;t created until the prompt actually succeeds. <strong>The actual clone/pull no longer freezes the whole app with no feedback while it runs</strong> — it&#x27;s backgrounded through the same spinner mechanism manual pull (<code>p</code>) already uses, so a bad or slow remote shows &quot;cloning &#x27;⟨name⟩&#x27;…&quot; immediately, an animated spinner in the footer for as long as it&#x27;s actually trying, and a clear final message either way, instead of looking indistinguishable from a hang or a crash. The spinner (shared by manual <code>s</code>/<code>u</code>/<code>p</code>/<code>P</code> too) now also shows elapsed seconds (<code>⠙ syncing &#x27;x&#x27; (34s)…</code>), so a genuinely large clone/pull reads as &quot;still working, 34 seconds in&quot; instead of leaving that ambiguous.</li>
+<li><strong><code>Ctrl+C</code> cancels an in-flight sync/pull/clone</strong>, and notebooks can now optionally keep themselves fresh on their own. <code>Ctrl+C</code> while the footer spinner is showing detaches from whatever&#x27;s running (manual <code>s</code>/<code>u</code>/<code>p</code>/<code>P</code>, an auto-pull, or a new-notebook clone) and frees the &quot;one op at a time&quot; slot immediately — the underlying network call can&#x27;t be safely force-killed mid-flight, so the abandoned attempt may still finish quietly in the background, its result simply discarded. Separately, <code>[general] auto_pull_on_switch</code> (off by default) pulls a notebook automatically the first time it&#x27;s selected each session, provided it has a remote configured — silent when there&#x27;s nothing to do (no remote, already pulled this session, something else already syncing), visible through the same spinner as manual <code>p</code> only when a real pull actually starts.</li>
+</ul>
+<h4>Changed</h4>
+<ul>
+<li><strong><code>shiki-core</code>/<code>shiki-config</code> are now genuinely portable to a non-native target, not just decoupled from <code>shiki-tui</code>.</strong> <code>git2</code>, <code>self_update</code>, <code>libc</code>, and <code>directories</code> are real optional Cargo features on <code>shiki-core</code> (<code>git2-backend</code>/<code>self-update</code>/<code>unix-process-check</code>/ <code>home-dir-expand</code>, all default-on — every existing consumer is unaffected). Filesystem access and git-repo detection/init are injectable via new <code>fs::FileStore</code>/<code>vcs::VcsPort</code> traits (<code>NotebookStore::new_with_backends</code>), with <code>LocalFs</code>/<code>NativeVcs</code> as the unchanged default; the same seam was added to <code>shiki-config</code> (<code>ConfigFileStore</code>) independently, without adding a cross-crate dependency between the two. <code>cargo check -p shiki-core --no-default-features</code> and <code>-p shiki-config</code>, both <code>--target wasm32-unknown-unknown</code>, now compile clean and are enforced by a dedicated CI job — fixed two real incompatibilities found getting there (<code>age</code>&#x27;s transitive <code>getrandom</code> needing its <code>js</code> feature; <code>comrak</code>&#x27;s default <code>syntect-onig</code> pulling in Oniguruma, a C library that can&#x27;t cross-compile to wasm) and one real gap (<code>browser::open_url</code> had no fallback branch for a platform that isn&#x27;t Linux/macOS/Windows). Removed <code>shiki-tui</code>&#x27;s long-unused <code>comrak</code> dependency in the process (never actually called from its source).</li>
+</ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="release-nav">
+    <div class="container release-nav-row">
+      <a href="0.9.6.html" class="release-nav-link">← v0.9.6</a>
+      <a href="../changelog.html" class="release-nav-link">All releases</a>
+      <a href="../changelog.html" class="release-nav-link release-nav-link--disabled">No newer release →</a>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sazardev/shiki">GitHub</a>
+        <a href="https://github.com/sazardev/shiki/releases/tag/v0.9.7">GitHub Release</a>
+        <a href="https://github.com/sazardev/shiki/issues">Issues</a>
+        <a href="https://github.com/sazardev/shiki/blob/main/LICENSE">MIT License</a>
+        <a class="coffee-link" href="https://buymeacoffee.com/sazarcode">☕ Buy me a coffee</a>
+      </div>
+      <small>shiki (私記) — built by <a href="https://github.com/sazardev">sazardev</a>. Free and open source, forever.</small>
+    </div>
+  </footer>
+
+  <script src="../js/main.js"></script>
+</body>
+</html>
