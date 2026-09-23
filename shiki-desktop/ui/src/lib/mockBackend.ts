@@ -321,8 +321,16 @@ export function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Pro
       return Promise.resolve([...mockLogs]);
     case "export_notebook":
       return Promise.resolve(`/mock/exports/${args.notebook}.${args.format}`);
+    case "export_note": {
+      const stem = String(args.path).replace(/\.md$/i, "").split("/").pop() ?? "note";
+      return Promise.resolve(`/mock/exports/${stem}.${args.format}`);
+    }
     case "publish_notebook":
       return Promise.resolve(`/mock/exports/${args.notebook}.pdf`);
+    case "publish_note": {
+      const stem = String(args.path).replace(/\.md$/i, "").split("/").pop() ?? "note";
+      return Promise.resolve(`/mock/exports/${stem}.pdf`);
+    }
     case "run_note_query": {
       // Not a real DSL parser — the mock just filters by substring match
       // on the query text against each note's title/tags, good enough to

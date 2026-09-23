@@ -240,6 +240,8 @@
       ToggleQuery: () => (input.overlay = "query"),
       ExportNotebook: openExport,
       PublishNotebook: () => void publishNotebook(),
+      ExportNote: openNoteExport,
+      PublishNote: () => void publishNote(),
       ToggleSettings: () => (input.showSettings = !input.showSettings),
     };
   }
@@ -404,12 +406,22 @@
     { value: "md", label: "Markdown" },
   ];
 
-  // ---- export notebook (leader+x) ----
+  // ---- export notebook / selected note ----
   let exportOpen = $state(false);
   let exportFormat = $state("html");
+  let exportTarget = $state<"notebook" | "note">("notebook");
 
   function openExport() {
     if (!activeNb) return;
+    exportTarget = "notebook";
+    exportFormat = "html";
+    exportOpen = true;
+    input.mode = "insert";
+  }
+
+  function openNoteExport() {
+    if (!activeNb || !selectedPath) return;
+    exportTarget = "note";
     exportFormat = "html";
     exportOpen = true;
     input.mode = "insert";
@@ -431,10 +443,25 @@
     }
   }
 
+  async function publishNote() {
+    if (!activeNb || !selectedPath) return;
+    setStatus("publishing selected note to PDF…");
+    try {
+      const path = await api.publishNote(activeNb, selectedPath);
+      setStatus(`published to ${path}`);
+    } catch (e) {
+      setStatus(`publish error: ${String(e)}`);
+    }
+  }
+
   async function confirmExport() {
     if (!activeNb) return;
     try {
-      const path = await api.exportNotebook(activeNb, exportFormat as "html" | "md");
+      const format = exportFormat as "html" | "md";
+      const path =
+        exportTarget === "note" && selectedPath
+          ? await api.exportNote(activeNb, selectedPath, format)
+          : await api.exportNotebook(activeNb, format);
       setStatus(`exported to ${path}`);
       closeExport();
     } catch (e) {
@@ -1499,7 +1526,7 @@
   {#if exportOpen}
     <div class="modal-backdrop" onclick={(e) => e.target === e.currentTarget && closeExport()}>
       <div class="modal">
-        <h3>Export {activeNb} to…</h3>
+        <h3>Export {exportTarget === "note" ? "selected note" : activeNb} to…</h3>
         <Dropdown bind:value={exportFormat} options={EXPORT_FORMAT_OPTIONS} />
         <div class="modal-actions">
           <button type="button" class="primary-btn" onclick={confirmExport}>Export</button>

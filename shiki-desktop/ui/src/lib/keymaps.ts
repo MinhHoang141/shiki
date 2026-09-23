@@ -22,6 +22,8 @@ export type Action =
   | "ToggleQuery"
   | "PublishNotebook"
   | "ExportNotebook"
+  | "PublishNote"
+  | "ExportNote"
   | "ToggleZenMode"
   // Notebooks-focus
   | "NewNotebook"
@@ -155,6 +157,8 @@ export function buildKeyMaps(cfg: KeybindingsConfig): KeyMaps {
   bind(notes, cfg.notes.visual, "ToggleVisual");
   bind(notes, cfg.notes.copy_entries, "CopyEntries");
   bind(notes, cfg.notes.metadata, "EditMetadata");
+  bind(notes, cfg.notes.publish, "PublishNote");
+  bind(notes, cfg.notes.export, "ExportNote");
 
   const preview = new Map<string, Action>();
   bind(preview, cfg.preview.edit_inline, "EditInline");
@@ -164,6 +168,8 @@ export function buildKeyMaps(cfg: KeybindingsConfig): KeyMaps {
   bind(preview, cfg.preview.links, "ShowLinks");
   bind(preview, cfg.preview.outline, "ShowOutline");
   bind(preview, cfg.preview.metadata, "EditMetadata");
+  bind(preview, cfg.preview.publish, "PublishNote");
+  bind(preview, cfg.preview.export, "ExportNote");
 
   return { leader, quit, global, notebooks, notes, preview };
 }
@@ -269,6 +275,8 @@ export const actionLabel: Record<Action, string> = {
   ToggleQuery: "query notes (frontmatter filter/sort)",
   PublishNotebook: "publish notebook to PDF",
   ExportNotebook: "export notebook to HTML/Markdown",
+  PublishNote: "publish selected note to PDF",
+  ExportNote: "export selected note to HTML/Markdown",
   ToggleZenMode: "zen mode (full-screen, hide side panels)",
   ShowOutline: "outline (jump to a heading)",
   EditMetadata: "metadata (tags / frontmatter fields)",
