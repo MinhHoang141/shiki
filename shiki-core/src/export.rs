@@ -31,6 +31,17 @@ pub fn render(notebook: &str, notes: &[Note], format: Format) -> String {
     }
 }
 
+/// Renders one note as a standalone document rather than a one-item notebook
+/// bundle. Markdown preserves shiki's canonical YAML-frontmatter file shape;
+/// HTML reuses the same metadata/body renderer and stylesheet as notebook
+/// export, with the note itself as the document title.
+pub fn render_note(note: &Note, format: Format) -> crate::Result<String> {
+    match format {
+        Format::Html => Ok(render_note_html(note)),
+        Format::Md => note.to_file_contents(),
+    }
+}
+
 fn render_markdown(notebook: &str, notes: &[Note]) -> String {
     let mut buf = format!("# {notebook}\n\n");
     for note in notes {
@@ -60,32 +71,50 @@ fn escape_html(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
+fn render_article(note: &Note, include_heading: bool) -> String {
+    let mut article = String::from("<article>\n");
+    if include_heading {
+        article.push_str("<h2>");
+        article.push_str(&escape_html(&note.frontmatter.title));
+        article.push_str("</h2>\n");
+    }
+    article.push_str("<p class=\"meta\">");
+    article.push_str(&note.frontmatter.date.to_string());
+    if !note.frontmatter.tags.is_empty() {
+        article.push_str(" &mdash; ");
+        article.push_str(
+            &note
+                .frontmatter
+                .tags
+                .iter()
+                .map(|t| format!("<span class=\"tag\">{}</span>", escape_html(t)))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+    }
+    article.push_str("</p>\n");
+    let mut body_html = String::new();
+    html::push_html(&mut body_html, Parser::new_ext(&note.body, Options::all()));
+    article.push_str(&body_html);
+    article.push_str("</article>\n");
+    article
+}
+
 fn render_html(notebook: &str, notes: &[Note]) -> String {
     let mut articles = String::new();
     for note in notes {
-        articles.push_str("<article>\n<h2>");
-        articles.push_str(&escape_html(&note.frontmatter.title));
-        articles.push_str("</h2>\n<p class=\"meta\">");
-        articles.push_str(&note.frontmatter.date.to_string());
-        if !note.frontmatter.tags.is_empty() {
-            articles.push_str(" &mdash; ");
-            articles.push_str(
-                &note
-                    .frontmatter
-                    .tags
-                    .iter()
-                    .map(|t| format!("<span class=\"tag\">{}</span>", escape_html(t)))
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            );
-        }
-        articles.push_str("</p>\n");
-        let mut body_html = String::new();
-        html::push_html(&mut body_html, Parser::new_ext(&note.body, Options::all()));
-        articles.push_str(&body_html);
-        articles.push_str("</article>\n<hr>\n");
+        articles.push_str(&render_article(note, true));
+        articles.push_str("<hr>\n");
     }
+    render_html_shell(notebook, &articles)
+}
 
+fn render_note_html(note: &Note) -> String {
+    let article = render_article(note, false);
+    render_html_shell(&note.frontmatter.title, &article)
+}
+
+fn render_html_shell(title: &str, articles: &str) -> String {
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -122,7 +151,7 @@ fn render_html(notebook: &str, notes: &[Note]) -> String {
 </body>
 </html>
 "#,
-        title = escape_html(notebook),
+        title = escape_html(title),
         articles = articles,
     )
 }
@@ -173,6 +202,30 @@ mod tests {
         assert!(out.contains("<span class=\"tag\">x&lt;y</span>"));
         assert!(!out.contains("A <B> & C"));
         // ...while the body goes through pulldown-cmark as real Markdown.
+        assert!(out.contains("<strong>bold</strong>"));
+    }
+
+    #[test]
+    fn standalone_markdown_preserves_frontmatter_and_body() {
+        let note = note("Standalone", &["one", "two"], "# Body\n\nhello");
+        let out = render_note(&note, Format::Md).unwrap();
+
+        assert!(out.starts_with("---\n"));
+        assert!(out.contains("title: Standalone"));
+        assert!(out.contains("tags:\n- one\n- two"));
+        assert!(out.contains("---\n\n# Body\n\nhello"));
+        assert!(!out.contains("# personal\n"));
+    }
+
+    #[test]
+    fn standalone_html_uses_note_title_as_document_heading() {
+        let note = note("A <B> & C", &["x<y"], "**bold**");
+        let out = render_note(&note, Format::Html).unwrap();
+
+        assert!(out.contains("<title>A &lt;B&gt; &amp; C</title>"));
+        assert!(out.contains("<h1>A &lt;B&gt; &amp; C</h1>"));
+        assert!(!out.contains("<h2>A &lt;B&gt; &amp; C</h2>"));
+        assert!(out.contains("<span class=\"tag\">x&lt;y</span>"));
         assert!(out.contains("<strong>bold</strong>"));
     }
 

@@ -310,10 +310,13 @@ enum Commands {
         #[arg(long)]
         no_limit: bool,
     },
-    /// Exports every note in a notebook to a single HTML or Markdown file
+    /// Exports a notebook, or one selected note, to HTML or Markdown.
     Export {
         #[arg(short = 'n', long)]
         notebook: Option<String>,
+        /// Export only this note instead of the complete notebook.
+        #[arg(long)]
+        note: Option<String>,
         /// Output file path.
         #[arg(short, long)]
         out: PathBuf,
@@ -321,14 +324,16 @@ enum Commands {
         #[arg(long, value_enum, default_value = "html")]
         format: commands::export::ExportFormat,
     },
-    /// Renders every note in a notebook to a themed PDF via `pretty-pdf`
-    /// (go-pretty-pdf) — fetched automatically on first use if it isn't
-    /// already on `$PATH`, no manual install step required.
+    /// Renders a notebook, or one selected note, to a themed PDF via
+    /// `pretty-pdf` (go-pretty-pdf).
     Publish {
         #[arg(short = 'n', long)]
         notebook: Option<String>,
-        /// Output PDF path — defaults to `{data_dir}/exports/{notebook}.pdf`
-        /// so it doesn't land inside the git-tracked notebook directory.
+        /// Publish only this note instead of the complete notebook.
+        #[arg(long)]
+        note: Option<String>,
+        /// Output PDF path — defaults to the configured export directory
+        /// using the notebook name, or the resolved note slug with --note.
         #[arg(short, long)]
         out: Option<PathBuf>,
         /// One of go-pretty-pdf's 17 built-in themes — defaults to
@@ -1052,28 +1057,38 @@ fn main() -> Result<()> {
         }
         Some(Commands::Export {
             notebook,
+            note,
             out,
             format,
         }) => {
             let notebook = ctx.notebook_name(notebook);
-            commands::export::run(&ctx.store, &notebook, &out, format)
+            commands::export::run(
+                &ctx.store,
+                &ctx.config,
+                &notebook,
+                note.as_deref(),
+                &out,
+                format,
+            )
         }
         Some(Commands::Publish {
             notebook,
+            note,
             out,
             theme,
         }) => {
             let notebook = ctx.notebook_name(notebook);
             let theme = theme.unwrap_or_else(|| ctx.config.export.pdf_theme.clone());
-            let export_dir = ctx.config.export.export_dir.trim();
-            let export_dir = if export_dir.is_empty() {
-                ctx.store.root.join("exports")
-            } else {
-                std::path::PathBuf::from(export_dir)
-            };
-            let out = out.unwrap_or(export_dir.join(format!("{notebook}.pdf")));
             let cache_dir = ctx.store.root.join("bin");
-            commands::publish::run(&ctx.store, &notebook, &out, &theme, &cache_dir)
+            commands::publish::run(
+                &ctx.store,
+                &ctx.config,
+                &notebook,
+                note.as_deref(),
+                out.as_deref(),
+                &theme,
+                &cache_dir,
+            )
         }
         Some(Commands::Tasks {
             notebook,

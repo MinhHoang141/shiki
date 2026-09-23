@@ -4768,6 +4768,22 @@ impl App {
             .into_owned();
         self.start_input(PendingInput::ExportNotebook, prefill);
     }
+    fn start_export_note(&mut self) {
+        let Some(note) = self.selected_note() else {
+            self.set_status("no note selected".into());
+            return;
+        };
+        let slug = shiki_core::Note::slugify(&note.frontmatter.title);
+        let prefill = self
+            .store
+            .root
+            .join("exports")
+            .join(format!("{slug}.html"))
+            .to_string_lossy()
+            .into_owned();
+        self.start_input(PendingInput::ExportNote, prefill);
+    }
+
     /// Opens when `[export].ask_export_path` is on — prefilled with the same
     /// path `publish_notebook` would otherwise silently use
     /// (`App::resolved_export_dir`), so accepting it as-is behaves exactly
@@ -4783,6 +4799,20 @@ impl App {
             .to_string_lossy()
             .into_owned();
         self.start_input(PendingInput::PublishPath, prefill);
+    }
+
+    pub(crate) fn start_publish_note_path_prompt(&mut self) {
+        let Some(note) = self.selected_note() else {
+            self.set_status("no note selected".into());
+            return;
+        };
+        let slug = shiki_core::Note::slugify(&note.frontmatter.title);
+        let prefill = self
+            .resolved_export_dir()
+            .join(format!("{slug}.pdf"))
+            .to_string_lossy()
+            .into_owned();
+        self.start_input(PendingInput::PublishNotePath, prefill);
     }
     fn create_daily_note(&mut self) {
         let Some(nb) = self.selected_notebook().cloned() else {
@@ -5367,6 +5397,8 @@ impl App {
             Action::EditMetadata => self.open_metadata(),
             Action::PublishNotebook => self.publish_notebook(),
             Action::ExportNotebook => self.start_export_notebook(),
+            Action::PublishNote => self.publish_note(),
+            Action::ExportNote => self.start_export_note(),
             Action::ToggleZenMode => self.toggle_zen_mode(),
 
             Action::NewNotebook => {
@@ -5748,11 +5780,47 @@ impl App {
                     }
                 }
             }
+            Some(PendingInput::ExportNote) => {
+                if value.is_empty() {
+                    self.set_status("export cancelled (empty path)".into());
+                } else if let Some(note) = self.selected_note().cloned() {
+                    let format = if value.ends_with(".md") || value.ends_with(".markdown") {
+                        shiki_core::export::Format::Md
+                    } else {
+                        shiki_core::export::Format::Html
+                    };
+                    match shiki_core::export::render_note(&note, format) {
+                        Ok(content) => {
+                            let path = std::path::Path::new(&value);
+                            let write_result = path
+                                .parent()
+                                .map(std::fs::create_dir_all)
+                                .transpose()
+                                .and_then(|_| std::fs::write(path, content));
+                            match write_result {
+                                Ok(()) => self.set_status(format!(
+                                    "exported '{}' to {value}",
+                                    note.frontmatter.title
+                                )),
+                                Err(e) => self.set_status(format!("export error: {e}")),
+                            }
+                        }
+                        Err(e) => self.set_status(format!("export error: {e}")),
+                    }
+                }
+            }
             Some(PendingInput::PublishPath) => {
                 if value.is_empty() {
                     self.set_status("publish cancelled (empty path)".into());
                 } else if let Some(nb) = self.selected_notebook().cloned() {
                     self.publish_notebook_to(nb, std::path::PathBuf::from(&value));
+                }
+            }
+            Some(PendingInput::PublishNotePath) => {
+                if value.is_empty() {
+                    self.set_status("publish cancelled (empty path)".into());
+                } else if let Some(note) = self.selected_note().cloned() {
+                    self.publish_note_to(note, std::path::PathBuf::from(&value));
                 }
             }
             Some(PendingInput::SettingsNotebookRemote) => {

@@ -6,6 +6,13 @@ semver yet (pre-1.0), but version bumps are still meaningful and tracked here.
 
 ## [Unreleased]
 
+### Added
+
+- Single-note export/publish: `shiki export --note <note>` writes one note as standalone Markdown
+  (canonical YAML frontmatter + body) or HTML, and `shiki publish --note <note>` sends only that
+  note through the existing themed PDF pipeline. NOTES/PREVIEW gain scoped `x`/`P` actions for
+  the selected note while leader+`x`/leader+`P` keep their notebook-wide behavior.
+
 ## [0.10.0] - 2026-09-22
 
 ### Added

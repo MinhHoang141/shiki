@@ -536,7 +536,10 @@ shiki graph -n work --json     # nodes/edges/orphans as JSON, for graphviz/d3/ge
 shiki graph --width 120        # custom canvas width in columns (default: the terminal's own width)
 shiki export -n work --out bundle.html            # every note in "work" as one self-contained HTML file
 shiki export -n work --out bundle.md --format md  # or a plain concatenated Markdown bundle
+shiki export --note "Customer PRD" -n work --out customer-prd.html  # one standalone note instead
+shiki export --note "Customer PRD" -n work --format md --out customer-prd.md
 shiki publish -n work                     # render "work" to a themed PDF via pretty-pdf (auto-fetched, see below)
+shiki publish --note "Customer PRD" -n work        # one note; defaults to exports/customer-prd.pdf
 shiki publish -n work --out report.pdf --theme dark   # custom path/theme; theme defaults to export.pdf_theme
 shiki sync                # git commit+push default notebook
 shiki sync -n work        # git sync in "work"

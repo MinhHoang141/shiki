@@ -734,6 +734,10 @@ pub struct NoteKeybindings {
     /// `toggle_dates`/`new_folder`/`visual`/`copy_entries`.
     #[serde(default = "default_metadata_key")]
     pub metadata: String,
+    #[serde(default = "default_note_export_key")]
+    pub export: String,
+    #[serde(default = "default_note_publish_key")]
+    pub publish: String,
 }
 
 impl Default for NoteKeybindings {
@@ -754,8 +758,18 @@ impl Default for NoteKeybindings {
             visual: default_visual_key(),
             copy_entries: default_copy_entries_key(),
             metadata: default_metadata_key(),
+            export: default_note_export_key(),
+            publish: default_note_publish_key(),
         }
     }
+}
+
+fn default_note_export_key() -> String {
+    "x".into()
+}
+
+fn default_note_publish_key() -> String {
+    "P".into()
 }
 
 fn default_metadata_key() -> String {
@@ -854,6 +868,10 @@ pub struct PreviewKeybindings {
     /// bound here too so it also works with PREVIEW focused, not only NOTES.
     #[serde(default = "default_metadata_key")]
     pub metadata: String,
+    #[serde(default = "default_note_export_key")]
+    pub export: String,
+    #[serde(default = "default_note_publish_key")]
+    pub publish: String,
 }
 
 impl Default for PreviewKeybindings {
@@ -866,6 +884,8 @@ impl Default for PreviewKeybindings {
             links: default_links_key(),
             outline: default_outline_key(),
             metadata: default_metadata_key(),
+            export: default_note_export_key(),
+            publish: default_note_publish_key(),
         }
     }
 }

@@ -609,6 +609,50 @@ impl App {
         self.publish_notebook_to(nb, out);
     }
 
+    pub(crate) fn publish_note(&mut self) {
+        if self.config.export.ask_export_path {
+            self.start_publish_note_path_prompt();
+            return;
+        }
+        let Some(note) = self.selected_note().cloned() else {
+            self.set_status("no note selected".into());
+            return;
+        };
+        let slug = shiki_core::Note::slugify(&note.frontmatter.title);
+        let out = self.resolved_export_dir().join(format!("{slug}.pdf"));
+        self.publish_note_to(note, out);
+    }
+
+    pub(crate) fn publish_note_to(
+        &mut self,
+        note: shiki_core::Note,
+        out: std::path::PathBuf,
+    ) {
+        let theme = self.config.export.pdf_theme.clone();
+        let cache_dir = self.store.root.join("bin");
+        let title = note.frontmatter.title.clone();
+        let label = title.clone();
+        self.spawn_git_op(label, move || {
+            let message = match shiki_core::publish::publish(
+                std::slice::from_ref(&note),
+                &theme,
+                &cache_dir,
+                &out,
+            ) {
+                Ok(()) => {
+                    let _ = shiki_core::browser::open_url(&out.to_string_lossy());
+                    format!("published '{title}' to {}", out.display())
+                }
+                Err(e) => format!("publish error ('{title}'): {e}"),
+            };
+            GitOpResult {
+                kind: GitOpKind::Publish,
+                message,
+                conflict: None,
+            }
+        });
+    }
+
     /// Shared tail of `publish_notebook` and the `PendingInput::PublishPath`
     /// confirm handler — both end up here once the output path is decided,
     /// one way (silent default) or the other (typed prompt).
