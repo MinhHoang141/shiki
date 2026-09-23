@@ -1248,3 +1248,95 @@ fn main() -> Result<()> {
         },
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn export_accepts_single_note_target() {
+        let cli = Cli::try_parse_from([
+            "shiki",
+            "export",
+            "--note",
+            "Customer PRD",
+            "--notebook",
+            "work",
+            "--format",
+            "md",
+            "--out",
+            "customer-prd.md",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Export {
+                notebook,
+                note,
+                out,
+                format,
+            }) => {
+                assert_eq!(notebook.as_deref(), Some("work"));
+                assert_eq!(note.as_deref(), Some("Customer PRD"));
+                assert_eq!(out, PathBuf::from("customer-prd.md"));
+                assert!(matches!(format, commands::export::ExportFormat::Md));
+            }
+            _ => panic!("expected export command"),
+        }
+    }
+
+    #[test]
+    fn publish_accepts_single_note_target_without_out() {
+        let cli = Cli::try_parse_from([
+            "shiki",
+            "publish",
+            "--note",
+            "Customer PRD",
+            "--notebook",
+            "work",
+            "--theme",
+            "dark",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Publish {
+                notebook,
+                note,
+                out,
+                theme,
+            }) => {
+                assert_eq!(notebook.as_deref(), Some("work"));
+                assert_eq!(note.as_deref(), Some("Customer PRD"));
+                assert!(out.is_none());
+                assert_eq!(theme.as_deref(), Some("dark"));
+            }
+            _ => panic!("expected publish command"),
+        }
+    }
+
+    #[test]
+    fn notebook_export_and_publish_still_parse_without_note() {
+        let export = Cli::try_parse_from([
+            "shiki",
+            "export",
+            "--notebook",
+            "work",
+            "--out",
+            "work.html",
+        ])
+        .unwrap();
+        match export.command {
+            Some(Commands::Export { note, .. }) => assert!(note.is_none()),
+            _ => panic!("expected export command"),
+        }
+
+        let publish =
+            Cli::try_parse_from(["shiki", "publish", "--notebook", "work"]).unwrap();
+        match publish.command {
+            Some(Commands::Publish { note, .. }) => assert!(note.is_none()),
+            _ => panic!("expected publish command"),
+        }
+    }
+}
