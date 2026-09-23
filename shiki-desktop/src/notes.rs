@@ -934,6 +934,42 @@ pub fn export_notebook(
     Ok(out_path.to_string_lossy().into_owned())
 }
 
+/// Exports one selected note through the same shared renderer as CLI/TUI.
+/// Markdown uses the canonical frontmatter+body file shape; HTML uses the
+/// standalone-note document shell from `shiki_core::export::render_note`.
+#[tauri::command]
+pub fn export_note(
+    state: tauri::State<'_, AppState>,
+    notebook: String,
+    path: String,
+    format: String,
+) -> Result<String, String> {
+    let nb = get_notebook(&state, &notebook)?;
+    if nb.crypto.is_some() {
+        return Err("encrypted notebooks are not exportable from the desktop app yet".into());
+    }
+    let note =
+        Note::from_file_in_notebook(&nb.path.join(&path), &nb.name).map_err(|e| e.to_string())?;
+    let (fmt, ext) = match format.as_str() {
+        "html" => (shiki_core::export::Format::Html, "html"),
+        "md" => (shiki_core::export::Format::Md, "md"),
+        other => return Err(format!("unknown export format '{other}'")),
+    };
+    let content = shiki_core::export::render_note(&note, fmt).map_err(|e| e.to_string())?;
+
+    let data_dir = Config::default_data_dir().map_err(|e| e.to_string())?;
+    let out_dir = data_dir.join("exports");
+    std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
+    let out_path = out_dir.join(format!(
+        "{}.{ext}",
+        Note::slugify(&note.frontmatter.title)
+    ));
+    std::fs::write(&out_path, content).map_err(|e| e.to_string())?;
+
+    let _ = shiki_core::browser::open_url(&out_path.to_string_lossy());
+    Ok(out_path.to_string_lossy().into_owned())
+}
+
 /// Renders the notebook to a themed PDF via `pretty-pdf` (downloaded/cached
 /// automatically on first use — `shiki_core::publish::publish` handles
 /// that, same as the TUI's `leader+P`), written to
@@ -962,6 +998,35 @@ pub fn publish_notebook(
     let cache_dir = state.store().root.join("bin");
 
     shiki_core::publish::publish(&notes, &theme, &cache_dir, &out_path)
+        .map_err(|e| e.to_string())?;
+    let _ = shiki_core::browser::open_url(&out_path.to_string_lossy());
+    Ok(out_path.to_string_lossy().into_owned())
+}
+
+/// Publishes one selected note through the existing pretty-pdf pipeline.
+#[tauri::command]
+pub fn publish_note(
+    state: tauri::State<'_, AppState>,
+    notebook: String,
+    path: String,
+) -> Result<String, String> {
+    let nb = get_notebook(&state, &notebook)?;
+    if nb.crypto.is_some() {
+        return Err("encrypted notebooks are not publishable from the desktop app yet".into());
+    }
+    let note =
+        Note::from_file_in_notebook(&nb.path.join(&path), &nb.name).map_err(|e| e.to_string())?;
+
+    let theme = state.config().export.pdf_theme.clone();
+    let out_dir = state.store().root.join("exports");
+    std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
+    let out_path = out_dir.join(format!(
+        "{}.pdf",
+        Note::slugify(&note.frontmatter.title)
+    ));
+    let cache_dir = state.store().root.join("bin");
+
+    shiki_core::publish::publish(std::slice::from_ref(&note), &theme, &cache_dir, &out_path)
         .map_err(|e| e.to_string())?;
     let _ = shiki_core::browser::open_url(&out_path.to_string_lossy());
     Ok(out_path.to_string_lossy().into_owned())

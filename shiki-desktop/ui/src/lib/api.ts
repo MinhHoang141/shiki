@@ -209,7 +209,11 @@ export const api = {
     invoke<QueryRowInfo[]>("run_note_query", { query, notebook: notebook ?? null }),
   exportNotebook: (notebook: string, format: "html" | "md") =>
     invoke<string>("export_notebook", { notebook, format }),
+  exportNote: (notebook: string, path: string, format: "html" | "md") =>
+    invoke<string>("export_note", { notebook, path, format }),
   publishNotebook: (notebook: string) => invoke<string>("publish_notebook", { notebook }),
+  publishNote: (notebook: string, path: string) =>
+    invoke<string>("publish_note", { notebook, path }),
   dailyNote: (notebook: string) => invoke<NoteInfo>("daily_note", { notebook }),
 
   renderNote: (notebook: string, path: string) =>

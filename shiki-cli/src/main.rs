@@ -310,10 +310,13 @@ enum Commands {
         #[arg(long)]
         no_limit: bool,
     },
-    /// Exports every note in a notebook to a single HTML or Markdown file
+    /// Exports a notebook, or one selected note, to HTML or Markdown.
     Export {
         #[arg(short = 'n', long)]
         notebook: Option<String>,
+        /// Export only this note instead of the complete notebook.
+        #[arg(long)]
+        note: Option<String>,
         /// Output file path.
         #[arg(short, long)]
         out: PathBuf,
@@ -321,14 +324,16 @@ enum Commands {
         #[arg(long, value_enum, default_value = "html")]
         format: commands::export::ExportFormat,
     },
-    /// Renders every note in a notebook to a themed PDF via `pretty-pdf`
-    /// (go-pretty-pdf) — fetched automatically on first use if it isn't
-    /// already on `$PATH`, no manual install step required.
+    /// Renders a notebook, or one selected note, to a themed PDF via
+    /// `pretty-pdf` (go-pretty-pdf).
     Publish {
         #[arg(short = 'n', long)]
         notebook: Option<String>,
-        /// Output PDF path — defaults to `{data_dir}/exports/{notebook}.pdf`
-        /// so it doesn't land inside the git-tracked notebook directory.
+        /// Publish only this note instead of the complete notebook.
+        #[arg(long)]
+        note: Option<String>,
+        /// Output PDF path — defaults to the configured export directory
+        /// using the notebook name, or the resolved note slug with --note.
         #[arg(short, long)]
         out: Option<PathBuf>,
         /// One of go-pretty-pdf's 17 built-in themes — defaults to
@@ -1052,28 +1057,38 @@ fn main() -> Result<()> {
         }
         Some(Commands::Export {
             notebook,
+            note,
             out,
             format,
         }) => {
             let notebook = ctx.notebook_name(notebook);
-            commands::export::run(&ctx.store, &notebook, &out, format)
+            commands::export::run(
+                &ctx.store,
+                &ctx.config,
+                &notebook,
+                note.as_deref(),
+                &out,
+                format,
+            )
         }
         Some(Commands::Publish {
             notebook,
+            note,
             out,
             theme,
         }) => {
             let notebook = ctx.notebook_name(notebook);
             let theme = theme.unwrap_or_else(|| ctx.config.export.pdf_theme.clone());
-            let export_dir = ctx.config.export.export_dir.trim();
-            let export_dir = if export_dir.is_empty() {
-                ctx.store.root.join("exports")
-            } else {
-                std::path::PathBuf::from(export_dir)
-            };
-            let out = out.unwrap_or(export_dir.join(format!("{notebook}.pdf")));
             let cache_dir = ctx.store.root.join("bin");
-            commands::publish::run(&ctx.store, &notebook, &out, &theme, &cache_dir)
+            commands::publish::run(
+                &ctx.store,
+                &ctx.config,
+                &notebook,
+                note.as_deref(),
+                out.as_deref(),
+                &theme,
+                &cache_dir,
+            )
         }
         Some(Commands::Tasks {
             notebook,
@@ -1231,5 +1246,97 @@ fn main() -> Result<()> {
                 commands::import::notion(&ctx.store, &path, name.as_deref())
             }
         },
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn export_accepts_single_note_target() {
+        let cli = Cli::try_parse_from([
+            "shiki",
+            "export",
+            "--note",
+            "Customer PRD",
+            "--notebook",
+            "work",
+            "--format",
+            "md",
+            "--out",
+            "customer-prd.md",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Export {
+                notebook,
+                note,
+                out,
+                format,
+            }) => {
+                assert_eq!(notebook.as_deref(), Some("work"));
+                assert_eq!(note.as_deref(), Some("Customer PRD"));
+                assert_eq!(out, PathBuf::from("customer-prd.md"));
+                assert!(matches!(format, commands::export::ExportFormat::Md));
+            }
+            _ => panic!("expected export command"),
+        }
+    }
+
+    #[test]
+    fn publish_accepts_single_note_target_without_out() {
+        let cli = Cli::try_parse_from([
+            "shiki",
+            "publish",
+            "--note",
+            "Customer PRD",
+            "--notebook",
+            "work",
+            "--theme",
+            "dark",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Publish {
+                notebook,
+                note,
+                out,
+                theme,
+            }) => {
+                assert_eq!(notebook.as_deref(), Some("work"));
+                assert_eq!(note.as_deref(), Some("Customer PRD"));
+                assert!(out.is_none());
+                assert_eq!(theme.as_deref(), Some("dark"));
+            }
+            _ => panic!("expected publish command"),
+        }
+    }
+
+    #[test]
+    fn notebook_export_and_publish_still_parse_without_note() {
+        let export = Cli::try_parse_from([
+            "shiki",
+            "export",
+            "--notebook",
+            "work",
+            "--out",
+            "work.html",
+        ])
+        .unwrap();
+        match export.command {
+            Some(Commands::Export { note, .. }) => assert!(note.is_none()),
+            _ => panic!("expected export command"),
+        }
+
+        let publish =
+            Cli::try_parse_from(["shiki", "publish", "--notebook", "work"]).unwrap();
+        match publish.command {
+            Some(Commands::Publish { note, .. }) => assert!(note.is_none()),
+            _ => panic!("expected publish command"),
+        }
     }
 }

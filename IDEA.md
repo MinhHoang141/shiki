@@ -288,6 +288,8 @@ resolver instead of attempting a second pull.
 | `v` | Select mode (`Mode::Visual`) — anchors a multi-select range at the current item; `j`/`k` extend/shrink it, `v`/`Esc` cancels. `d`/`m` (above) act on the whole range instead of one item |
 | `y` | Select-mode only: copies every selected note/folder to a prompted target (same `notebook/path` syntax as `m`), leaving the originals in place |
 | `M` | Metadata editor — the selected note's tags plus every custom frontmatter field (`status`, `priority`, `due`, or anything else), add/edit/delete in place without leaving the TUI. Also on PREVIEW scope |
+| `x` | Export the selected note to standalone HTML/Markdown. The save-path prompt is prefilled with the note slug; `.md`/`.markdown` selects Markdown and any other extension selects HTML. Leader+`x` remains the notebook-wide export action |
+| `P` | Publish only the selected note to a themed PDF through the same `pretty-pdf` pipeline as notebook publishing. Leader+`P` remains the notebook-wide publish action |
 
 #### `[keybindings.preview]` — active while PREVIEW is focused
 
@@ -299,6 +301,8 @@ resolver instead of attempting a second pull.
 | `L` | Links — the selected note's outgoing `[[wikilinks]]` (resolved against every note in the notebook, any folder depth), every other note that links back to it, and notes that *mention* this note's title in plain text without linking to it ("Outgoing"/"Backlinks"/"Mentions (unlinked)" sections; a section with nothing in it is omitted). `j`/`k`/`PageUp`/`PageDown`/`Home`/`End` move, `Enter` jumps to the selected note (an unresolved outgoing link reports that instead of jumping), `c` on a mention row *repairs* the missed link — it wraps that note's plain-text mention into a real `[[wikilink]]` (preserving its casing) and the row visibly migrates to Backlinks — and `Esc`/`q` closes. Also reachable globally via leader+`B` |
 | `o` | Outline — every `#`..`######` heading in the selected note, indented by level. Type to filter the list live (case-insensitive substring, matching the which-key modal's own filter), `j`/`k`/`PageUp`/`PageDown`/`Home`/`End` move, `Enter` scrolls PREVIEW to that heading, `Esc` closes (the filter resets). Also reachable as `Ctrl+O` from inside `Mode::Edit` itself — there, `Enter` moves the editor's own cursor to the heading instead of scrolling PREVIEW, and the headings come from the live, possibly-unsaved buffer rather than the note's last-saved body |
 | `M` | Metadata editor — same action as NOTES scope's `M`, bound here too so it works with PREVIEW focused as well |
+| `x` | Export the selected note to standalone HTML/Markdown; same selected-note action as NOTES scope |
+| `P` | Publish the selected note to a themed PDF; same selected-note action as NOTES scope |
 
 Mouse: a plain click over a note's rendered body jumps straight into the inline editor with the
 cursor on the clicked line — a mouse-only alternative to `i`/vim motions. Click-and-drag instead
@@ -536,7 +540,10 @@ shiki graph -n work --json     # nodes/edges/orphans as JSON, for graphviz/d3/ge
 shiki graph --width 120        # custom canvas width in columns (default: the terminal's own width)
 shiki export -n work --out bundle.html            # every note in "work" as one self-contained HTML file
 shiki export -n work --out bundle.md --format md  # or a plain concatenated Markdown bundle
+shiki export --note "Customer PRD" -n work --out customer-prd.html  # one standalone note instead
+shiki export --note "Customer PRD" -n work --format md --out customer-prd.md
 shiki publish -n work                     # render "work" to a themed PDF via pretty-pdf (auto-fetched, see below)
+shiki publish --note "Customer PRD" -n work        # one note; defaults to exports/customer-prd.pdf
 shiki publish -n work --out report.pdf --theme dark   # custom path/theme; theme defaults to export.pdf_theme
 shiki sync                # git commit+push default notebook
 shiki sync -n work        # git sync in "work"
@@ -1221,6 +1228,9 @@ visual = "v"
 copy_entries = "y"
 # Metadata editor — tags plus custom frontmatter fields, add/edit/delete.
 metadata = "M"
+# Selected-note export/publish; leader+x / leader+P stay notebook-wide.
+export = "x"
+publish = "P"
 
 [keybindings.preview]
 edit_inline = "i"
@@ -1232,6 +1242,9 @@ links = "L"
 outline = "o"
 # Same metadata editor as NOTES scope, bound here too.
 metadata = "M"
+# Same selected-note export/publish actions as NOTES scope.
+export = "x"
+publish = "P"
 
 [theme]
 name = "gruvbox-dark"

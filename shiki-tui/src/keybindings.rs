@@ -35,6 +35,8 @@ pub enum Action {
     /// Exports the selected notebook to a single HTML or Markdown bundle —
     /// the same rendering `shiki export` (CLI) uses.
     ExportNotebook,
+    PublishNote,
+    ExportNote,
     /// Forces the full-screen single-panel layout regardless of terminal
     /// size, hiding NOTEBOOKS/NOTES for distraction-free writing.
     ToggleZenMode,
@@ -214,6 +216,8 @@ impl KeyMaps {
         bind(&mut notes, &cfg.notes.visual, Action::ToggleVisual);
         bind(&mut notes, &cfg.notes.copy_entries, Action::CopyEntries);
         bind(&mut notes, &cfg.notes.metadata, Action::EditMetadata);
+        bind(&mut notes, &cfg.notes.publish, Action::PublishNote);
+        bind(&mut notes, &cfg.notes.export, Action::ExportNote);
 
         let mut preview = HashMap::new();
         bind(&mut preview, &cfg.preview.edit_inline, Action::EditInline);
@@ -227,6 +231,8 @@ impl KeyMaps {
         bind(&mut preview, &cfg.preview.links, Action::ShowLinks);
         bind(&mut preview, &cfg.preview.outline, Action::ShowOutline);
         bind(&mut preview, &cfg.preview.metadata, Action::EditMetadata);
+        bind(&mut preview, &cfg.preview.publish, Action::PublishNote);
+        bind(&mut preview, &cfg.preview.export, Action::ExportNote);
 
         Self {
             leader,
@@ -447,6 +453,8 @@ pub fn action_label(action: Action) -> &'static str {
         Action::ToggleQuery => "query notes (frontmatter filter/sort)",
         Action::PublishNotebook => "publish notebook to PDF",
         Action::ExportNotebook => "export notebook to HTML/Markdown",
+        Action::PublishNote => "publish selected note to PDF",
+        Action::ExportNote => "export selected note to HTML/Markdown",
         Action::ToggleZenMode => "zen mode (full-screen, hide side panels)",
         Action::ShowOutline => "outline (jump to a heading)",
         Action::EditMetadata => "metadata (tags / frontmatter fields)",
@@ -488,6 +496,8 @@ pub fn action_icon(action: Action) -> crate::icons::Icon {
         Action::Scratchpad => crate::icons::PENCIL,
         Action::PublishNotebook => crate::icons::PDF,
         Action::ExportNotebook => crate::icons::NOTE,
+        Action::PublishNote => crate::icons::PDF,
+        Action::ExportNote => crate::icons::NOTE,
         Action::ToggleZenMode => crate::icons::EXPAND,
         Action::ShowOutline => crate::icons::TREE,
         Action::EditMetadata => crate::icons::TAG,

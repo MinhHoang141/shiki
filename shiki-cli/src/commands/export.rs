@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
 use clap::ValueEnum;
+use shiki_config::Config;
 use shiki_core::NotebookStore;
 use std::path::Path;
+
+use super::{find_note, get_notebook, unlock_if_encrypted};
 
 #[derive(Clone, Copy, ValueEnum)]
 pub enum ExportFormat {
@@ -20,14 +23,30 @@ impl From<ExportFormat> for shiki_core::export::Format {
     }
 }
 
-/// Exports every note in `notebook` (recursively, so nested folders are
-/// included) into one file at `out`, sorted by date then title so the
-/// output reads chronologically. The actual rendering lives in
-/// `shiki_core::export` — shared with the TUI's own export action so
-/// there's exactly one implementation.
-pub fn run(store: &NotebookStore, notebook: &str, out: &Path, format: ExportFormat) -> Result<()> {
+/// Exports either one explicitly-selected note or every note in `notebook`.
+/// The notebook path is deliberately left unchanged when `note` is absent;
+/// single-note mode reuses the same lookup/unlock contract as show/edit/etc.
+pub fn run(
+    store: &NotebookStore,
+    config: &Config,
+    notebook: &str,
+    note: Option<&str>,
+    out: &Path,
+    format: ExportFormat,
+) -> Result<()> {
+    if let Some(selector) = note {
+        let nb = unlock_if_encrypted(config, get_notebook(store, notebook)?)?;
+        let note = find_note(&nb, selector)?;
+        let title = note.frontmatter.title.clone();
+        let content = shiki_core::export::render_note(&note, format.into())?;
+        std::fs::write(out, content)
+            .with_context(|| format!("failed to write '{}'", out.display()))?;
+        println!("exported '{title}' to {}", out.display());
+        return Ok(());
+    }
+
     let nb = store.get(notebook).with_context(|| {
-        format!("notebook '{notebook}' not found \u{2014} see `shiki notebook list`")
+        format!("notebook '{notebook}' not found — see `shiki notebook list`")
     })?;
     let mut notes = nb.all_notes_recursive()?;
     notes.sort_by(|a, b| {
